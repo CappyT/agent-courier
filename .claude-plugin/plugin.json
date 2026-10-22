@@ -1,0 +1,39 @@
+{
+  "name": "agent-courier",
+  "version": "0.2.0",
+  "description": "Issue events between the orchestrators of different people over NATS JetStream",
+  "author": {
+    "name": "Gabriele Turelli"
+  },
+  "defaultEnabled": false,
+  "userConfig": {
+    "login": {
+      "type": "string",
+      "title": "Login",
+      "description": "Your courier login: it names the durable consumer and the nkey seed file",
+      "required": true
+    },
+    "natsUrl": {
+      "type": "string",
+      "title": "NATS URL",
+      "description": "NATS server URL",
+      "default": "wss://nats.example.com"
+    }
+  },
+  "mcpServers": {
+    "agent-courier": {
+      "command": "agent-courier",
+      "env": {
+        "COURIER_NATS_URL": "${user_config.natsUrl}",
+        "COURIER_LOGIN": "${user_config.login}",
+        "COURIER_PROJECT_DIR": "${CLAUDE_PROJECT_DIR}"
+      }
+    }
+  },
+  "channels": [
+    {
+      "server": "agent-courier",
+      "displayName": "Agent courier"
+    }
+  ]
+}

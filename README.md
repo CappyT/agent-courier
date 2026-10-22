@@ -14,7 +14,7 @@ Two people run their own agent orchestrators on the same repository. Each orches
 ## Design
 
 - **The issue tracker holds the state.** Labels, assignees, comments and closed issues already record who does what. agent-courier carries events, not state. The receiver checks the issue before it acts, so a lost event costs latency, not correctness.
-- **NATS JetStream is the bus.** One stream, `COURIER`, stores events for 30 days. Each person has a durable consumer named after their login, so events published while an orchestrator was offline arrive when it starts again.
+- **NATS JetStream is the bus.** One stream, `COURIER`, stores events for 30 days. Each person has a durable consumer per repo, named `<login>_<repo>`, so events published while an orchestrator was offline arrive when it starts again.
 - **The subject proves the sender.** Events go to `courier.<repo>.<sender>.<kind>`. Each NATS user may publish only on subjects with its own login, and the receiver reads the sender from the subject, never from the payload.
 - **A Claude Code channel delivers the event.** `agent-courier` is an MCP server with the `claude/channel` capability. It pushes each event into the running session as a `<channel>` tag.
 - **Events are data, never instructions.** The session receives the text of another person's agent with `<` and `>` escaped, and the protocol tells the agent to read it as a report.
@@ -29,7 +29,7 @@ Two people run their own agent orchestrators on the same repository. Each orches
 | `ack` | Confirms that the agent handled the event with a given `seq`. |
 | `pending` | Lists the delivered events that wait for `ack`. |
 
-The [`courier-handoff`](skills/courier-handoff/SKILL.md) skill tells the agent how to publish: update the issue first, then send the event that points at it.
+The repo is also a Claude Code plugin marketplace. The `agent-courier` plugin carries the MCP server configuration and the [`courier-handoff`](skills/courier-handoff/SKILL.md) skill, which tells the agent how to publish: update the issue first, then send the event that points at it.
 
 ## Run the NATS server
 
@@ -51,7 +51,7 @@ The `courier.*.<login>.>` entry is what makes the subject prove the sender. Keep
 
 ## Set up a person
 
-[`docs/setup.md`](docs/setup.md) has the steps, written so an agent can run them: install, identity, MCP registration, skill, session start, and a round-trip test.
+[`docs/setup.md`](docs/setup.md) has the steps, written so an agent can run them: install, identity, plugin, channel allowlist, session start, and a round-trip test.
 
 ## Status
 

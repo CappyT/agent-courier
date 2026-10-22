@@ -2,7 +2,7 @@
 
 Follow these steps in order on the person's machine. Each step ends on a check. Do not start the next step until the check passes.
 
-You need from the person: their login (the name the team uses for them, for example their GitHub login), the NATS URL, and the repos to follow. The NATS admin gives the URL.
+You need from the person: their login (the name the team uses for them, for example their GitHub login) and the NATS URL. The NATS admin gives the URL.
 
 ## 1. Install the binary
 
@@ -29,53 +29,58 @@ Check: the admin confirms the user exists, and this command prints `Account:`:
 nats -s <url> --nkey ~/.config/nats/agent-courier/<login>.nk account info
 ```
 
-## 3. Register the MCP server
+## 3. Install the plugin
 
-Add the server to the `.mcp.json` of each repo the orchestrator works in:
+The plugin carries the MCP server configuration and the `courier-handoff` skill.
+
+```sh
+claude plugin marketplace add CappyT/agent-courier
+claude plugin install agent-courier@agent-courier
+```
+
+The plugin has two options:
+
+- `login` is the login the admin registered. The server refuses events published under any other login, and reads the seed from `~/.config/nats/agent-courier/<login>.nk`.
+- `natsUrl` is the NATS URL. The default is `wss://nats.example.com`.
+
+The plugin is off by default. Turn it on in each repo the orchestrator works in:
+
+```sh
+claude plugin enable agent-courier@agent-courier --scope local
+```
+
+The server follows the repo of the session directory: the name in the `origin` URL, else the name of the git toplevel. These environment variables change the defaults:
+
+- `COURIER_REPOS` takes repository names without owner, separated by commas. A name may contain only letters, digits, `-` and `_`.
+- `COURIER_NKEY_FILE` is the path of the seed file. A leading `~/` means the home directory.
+- `COURIER_ACK_WAIT` sets how long an event waits for `ack` before it comes back. The default is `30m`.
+
+Check: in a session in that repo, `/mcp` lists the `agent-courier` server of the plugin as connected.
+
+## 4. Allow the channel
+
+Channels are a research preview. Without an allowlist entry, the channel needs the development flag on every start. To start without it, add the plugin to the managed settings (`/etc/claude-code/managed-settings.json` on Linux):
 
 ```json
 {
-  "mcpServers": {
-    "agent-courier": {
-      "command": "agent-courier",
-      "env": {
-        "COURIER_NATS_URL": "<url>",
-        "COURIER_NKEY_FILE": "/home/<user>/.config/nats/agent-courier/<login>.nk",
-        "COURIER_LOGIN": "<login>",
-        "COURIER_REPOS": "<repo>,<repo>"
-      }
-    }
-  }
+  "channelsEnabled": true,
+  "allowedChannelPlugins": [{ "marketplace": "agent-courier", "plugin": "agent-courier" }]
 }
 ```
 
-- `COURIER_LOGIN` must be the login the admin registered. The server refuses events published under any other login.
-- `COURIER_REPOS` takes repository names without owner, separated by commas. A name may contain only letters, digits, `-` and `_`.
-- `COURIER_ACK_WAIT` is optional. It sets how long an event waits for `ack` before it comes back. The default is `30m`.
+`allowedChannelPlugins` replaces the default Anthropic allowlist. Add the other channel plugins you use to the same list.
 
-Check: `claude mcp list` shows `agent-courier` as connected.
-
-## 4. Install the skill
-
-```sh
-mkdir -p ~/.claude/skills/courier-handoff
-curl -fsSL https://raw.githubusercontent.com/CappyT/agent-courier/main/skills/courier-handoff/SKILL.md \
-  -o ~/.claude/skills/courier-handoff/SKILL.md
-```
-
-Check: `head -3 ~/.claude/skills/courier-handoff/SKILL.md` prints `name: courier-handoff`.
+Check: `cat /etc/claude-code/managed-settings.json` shows both keys.
 
 ## 5. Start the session with the channel
 
-Custom channels are a research preview, so they need the development flag:
-
 ```sh
-claude --dangerously-load-development-channels server:agent-courier
+claude --channels plugin:agent-courier@agent-courier
 ```
 
-On a Team or Enterprise plan, an admin must first enable channels for the organization.
+Without the managed settings, start with `claude --dangerously-load-development-channels plugin:agent-courier@agent-courier` instead.
 
-Check: below the startup banner, a notice says that messages from `server:agent-courier` inject into the session.
+Check: below the startup banner, a notice says that messages from `plugin:agent-courier@agent-courier` inject into the session.
 
 ## 6. Test the round trip
 
