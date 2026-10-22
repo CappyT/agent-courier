@@ -8,7 +8,9 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -61,19 +63,61 @@ func configFromEnv() (courier.Config, error) {
 	}
 	var missing []string
 	for name, v := range map[string]string{
-		"COURIER_NATS_URL":  cfg.URL,
-		"COURIER_NKEY_FILE": cfg.NkeyFile,
-		"COURIER_LOGIN":     cfg.Login,
+		"COURIER_NATS_URL": cfg.URL,
+		"COURIER_LOGIN":    cfg.Login,
 	} {
 		if v == "" {
 			missing = append(missing, name)
 		}
 	}
-	if len(cfg.Repos) == 0 {
-		missing = append(missing, "COURIER_REPOS")
-	}
 	if len(missing) > 0 {
 		return cfg, fmt.Errorf("missing environment: %s", strings.Join(missing, ", "))
 	}
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return cfg, err
+	}
+	if cfg.NkeyFile == "" {
+		cfg.NkeyFile = filepath.Join(home, ".config", "nats", "agent-courier", cfg.Login+".nk")
+	} else if rest, ok := strings.CutPrefix(cfg.NkeyFile, "~/"); ok {
+		cfg.NkeyFile = filepath.Join(home, rest)
+	}
+
+	if len(cfg.Repos) == 0 {
+		dir := os.Getenv("COURIER_PROJECT_DIR")
+		if dir == "" {
+			if dir, err = os.Getwd(); err != nil {
+				return cfg, err
+			}
+		}
+		repo := detectRepo(dir)
+		if !courier.ValidToken(repo) {
+			return cfg, fmt.Errorf("repo %q detected in %s is not a valid name: set COURIER_REPOS", repo, dir)
+		}
+		cfg.Repos = []string{repo}
+	}
 	return cfg, nil
+}
+
+// detectRepo names the repository of dir: the name in the origin URL, else
+// the git toplevel directory, else dir itself. A worktree lives in a
+// directory with another name, so the origin URL comes first.
+func detectRepo(dir string) string {
+	if out, err := exec.Command("git", "-C", dir, "remote", "get-url", "origin").Output(); err == nil {
+		if name := repoFromURL(string(out)); name != "" {
+			return name
+		}
+	}
+	if out, err := exec.Command("git", "-C", dir, "rev-parse", "--show-toplevel").Output(); err == nil {
+		dir = strings.TrimSpace(string(out))
+	}
+	return filepath.Base(dir)
+}
+
+// repoFromURL takes the repository name from an https, ssh or scp-style
+// remote URL such as git@github.com:owner/name.git.
+func repoFromURL(url string) string {
+	url = strings.TrimSuffix(strings.TrimRight(strings.TrimSpace(url), "/"), ".git")
+	return url[strings.LastIndexAny(url, "/:")+1:]
 }

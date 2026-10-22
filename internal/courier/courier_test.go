@@ -208,6 +208,35 @@ func TestChannelOverStdio(t *testing.T) {
 	}
 }
 
+// TestSessionsInDifferentRepos checks that a second session of the same login
+// in another repo leaves the first session's filter alone.
+func TestSessionsInDifferentRepos(t *testing.T) {
+	url, seeds := startNATS(t, "alice", "bob")
+	ctx := t.Context()
+	hp := connect(t, url, seeds, "alice", "hp")
+	other := connect(t, url, seeds, "alice", "other")
+	bob := connect(t, url, seeds, "bob")
+
+	got := make(chan Delivery, 4)
+	go func() { _ = hp.Consume(ctx, func(d Delivery) { got <- d }) }()
+	time.Sleep(200 * time.Millisecond)
+	go func() { _ = other.Consume(ctx, func(Delivery) {}) }()
+	time.Sleep(200 * time.Millisecond)
+
+	seq, err := bob.Publish(ctx, Event{Repo: "hp", Kind: "note", Summary: "for hp"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case d := <-got:
+		if d.Seq != seq {
+			t.Fatalf("got %+v, want seq %d", d, seq)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the hp session lost its filter")
+	}
+}
+
 // startNATS runs a JetStream server with one nkey user per login and the
 // same publish permissions as production. It returns the client URL and the
 // seed file of each login.
@@ -236,9 +265,12 @@ func startNATS(t *testing.T, logins ...string) (string, map[string]string) {
 	return srv.ClientURL(), seeds
 }
 
-func connect(t *testing.T, url string, seeds map[string]string, login string) *Bus {
+func connect(t *testing.T, url string, seeds map[string]string, login string, repos ...string) *Bus {
 	t.Helper()
-	b, err := Connect(t.Context(), Config{URL: url, NkeyFile: seeds[login], Login: login, Repos: []string{"hp"}, AckWait: time.Minute})
+	if len(repos) == 0 {
+		repos = []string{"hp"}
+	}
+	b, err := Connect(t.Context(), Config{URL: url, NkeyFile: seeds[login], Login: login, Repos: repos, AckWait: time.Minute})
 	if err != nil {
 		t.Fatal(err)
 	}

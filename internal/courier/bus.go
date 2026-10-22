@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"maps"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -117,8 +118,9 @@ func (b *Bus) Publish(ctx context.Context, e Event) (uint64, error) {
 }
 
 // Consume delivers the events of the followed repos to deliver until ctx
-// ends. The durable consumer is named after the login, so events published
-// while the orchestrator was offline arrive when it starts again.
+// ends. The durable consumer is named after the login and the repos, so
+// events published while the orchestrator was offline arrive when it starts
+// again, and sessions in different repos keep their own filters.
 func (b *Bus) Consume(ctx context.Context, deliver func(Delivery)) error {
 	if len(b.cfg.Repos) == 0 {
 		return fmt.Errorf("no repos to follow")
@@ -127,8 +129,9 @@ func (b *Bus) Consume(ctx context.Context, deliver func(Delivery)) error {
 	for _, r := range b.cfg.Repos {
 		filters = append(filters, RepoFilter(r))
 	}
+	durable := b.cfg.Login + "_" + strings.Join(slices.Sorted(slices.Values(b.cfg.Repos)), "_")
 	cons, err := b.js.CreateOrUpdateConsumer(ctx, StreamName, jetstream.ConsumerConfig{
-		Durable:        b.cfg.Login,
+		Durable:        durable,
 		FilterSubjects: filters,
 		AckPolicy:      jetstream.AckExplicitPolicy,
 		AckWait:        b.cfg.AckWait,
@@ -136,7 +139,7 @@ func (b *Bus) Consume(ctx context.Context, deliver func(Delivery)) error {
 		DeliverPolicy:  jetstream.DeliverNewPolicy,
 	})
 	if err != nil {
-		return fmt.Errorf("consumer %s: %w", b.cfg.Login, err)
+		return fmt.Errorf("consumer %s: %w", durable, err)
 	}
 	cc, err := cons.Consume(func(msg jetstream.Msg) {
 		e, err := Decode(msg.Subject(), msg.Data())
