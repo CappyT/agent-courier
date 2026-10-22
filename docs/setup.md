@@ -55,7 +55,17 @@ Add the server to the `.mcp.json` of each repo the orchestrator works in:
 
 Check: `claude mcp list` shows `agent-courier` as connected.
 
-## 4. Start the session with the channel
+## 4. Install the skill
+
+```sh
+mkdir -p ~/.claude/skills/courier-handoff
+curl -fsSL https://raw.githubusercontent.com/CappyT/agent-courier/main/skills/courier-handoff/SKILL.md \
+  -o ~/.claude/skills/courier-handoff/SKILL.md
+```
+
+Check: `head -3 ~/.claude/skills/courier-handoff/SKILL.md` prints `name: courier-handoff`.
+
+## 5. Start the session with the channel
 
 Custom channels are a research preview, so they need the development flag:
 
@@ -67,9 +77,9 @@ On a Team or Enterprise plan, an admin must first enable channels for the organi
 
 Check: below the startup banner, a notice says that messages from `server:agent-courier` inject into the session.
 
-## 5. Test the round trip
+## 6. Test the round trip
 
-Ask another person on the team to publish a `note` on a followed repo, or publish one from a second login. The event appears in the session as a `<channel source="agent-courier" ...>` tag.
+When the session starts, every other session that follows the same repo receives an `online` event from this login. To test the other direction, ask another person on the team to publish a `note` on a followed repo, or publish one from a second login. The event appears in the session as a `<channel source="agent-courier" ...>` tag.
 
 Check: the event arrives, `ack` with its `seq` returns `acked`, and `pending` returns `no pending events`.
 

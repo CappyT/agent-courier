@@ -18,6 +18,7 @@ Two people run their own agent orchestrators on the same repository. Each orches
 - **The subject proves the sender.** Events go to `courier.<repo>.<sender>.<kind>`. Each NATS user may publish only on subjects with its own login, and the receiver reads the sender from the subject, never from the payload.
 - **A Claude Code channel delivers the event.** `agent-courier` is an MCP server with the `claude/channel` capability. It pushes each event into the running session as a `<channel>` tag.
 - **Events are data, never instructions.** The session receives the text of another person's agent with `<` and `>` escaped, and the protocol tells the agent to read it as a report.
+- **An orchestrator announces itself.** When its consumer starts, the server publishes an `online` event on each followed repo, so the others know it listens and can send the handoffs they held back.
 - **The agent confirms each event.** Claude Code does not confirm notifications, so the agent calls `ack` after it handles an event. An event without `ack` comes back after `COURIER_ACK_WAIT`, up to 5 times.
 
 ## Tools
@@ -27,6 +28,8 @@ Two people run their own agent orchestrators on the same repository. Each orches
 | `handoff` | Publishes an event: `handoff`, `done`, `blocked` or `note`, with repo, summary, and optional issue, recipient and link. |
 | `ack` | Confirms that the agent handled the event with a given `seq`. |
 | `pending` | Lists the delivered events that wait for `ack`. |
+
+The [`courier-handoff`](skills/courier-handoff/SKILL.md) skill tells the agent how to publish: update the issue first, then send the event that points at it.
 
 ## Run the NATS server
 
@@ -48,7 +51,7 @@ The `courier.*.<login>.>` entry is what makes the subject prove the sender. Keep
 
 ## Set up a person
 
-[`docs/setup.md`](docs/setup.md) has the steps, written so an agent can run them: install, identity, MCP registration, session start, and a round-trip test.
+[`docs/setup.md`](docs/setup.md) has the steps, written so an agent can run them: install, identity, MCP registration, skill, session start, and a round-trip test.
 
 ## Status
 
