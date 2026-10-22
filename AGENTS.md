@@ -14,6 +14,8 @@ A Claude Code channel in Go. It carries handoff events between the orchestrators
 
 - `go test -race ./...` runs a JetStream server in process with the production permissions. Run it before every commit.
 - The event protocol the agent follows is the `instructions` constant in `internal/courier/channel.go`. Change it there only. `docs/setup.md` points to it.
+- The repo is also the plugin marketplace: `.claude-plugin/` holds the manifests, `skills/` the plugin skills. Run `claude plugin validate .` after a change there.
+- A release bumps `Version` in `internal/courier/channel.go` and `version` in `.claude-plugin/plugin.json` together, then gets an annotated tag `v<version>`. A test fails when the two versions differ. The setup installs the binary and the plugin from the same tag.
 - Write modern Go for the version in `go.mod`: `encoding/json/v2`, `cmp.Or`, iterator helpers from `slices`, `maps` and `strings`.
 
 ## Commits

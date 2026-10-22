@@ -24,3 +24,4 @@ An event is a pointer: it tells the receiver to look at an issue. The issue hold
 
 - A receiver gets every event published after its first connection, also while it is offline, for 30 days. An event published before the receiver ever connected never reaches it: hold the handoff until an `online` event from that person arrives, and tell the user.
 - A tool error that names a permission means the NATS server refused your login on that subject. Report it to the user.
+- When an event you expect does not arrive, work down the Troubleshoot section of `${CLAUDE_PLUGIN_ROOT}/docs/setup.md`.

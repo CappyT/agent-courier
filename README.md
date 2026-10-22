@@ -11,6 +11,10 @@ Two people run their own agent orchestrators on the same repository. Each orches
  orchestrator A ◄─channel───└──────────────┘◄─handoff─── orchestrator B
 ```
 
+## Install
+
+Follow [`docs/setup.md`](docs/setup.md). It is written so an agent can run it step by step: binary, identity, plugin, channel allowlist, session start, a round-trip test and troubleshooting. Before that, the NATS admin registers the person, as [Run the NATS server](#run-the-nats-server) describes.
+
 ## Design
 
 - **The issue tracker holds the state.** Labels, assignees, comments and closed issues already record who does what. agent-courier carries events, not state. The receiver checks the issue before it acts, so a lost event costs latency, not correctness.
@@ -49,13 +53,13 @@ accounts {
 
 The `courier.*.<login>.>` entry is what makes the subject prove the sender. Keep it in every user.
 
-## Set up a person
-
-[`docs/setup.md`](docs/setup.md) has the steps, written so an agent can run them: install, identity, plugin, channel allowlist, session start, and a round-trip test.
+To register a person, add a user with their public key and their login in the publish entry, then reload the server. The person sends both, as step 2 of the setup describes.
 
 ## Status
 
-Prototype. The tests run a JetStream server in process with the production permissions, and an MCP smoke test passed against a real server. Delivery into a live Claude Code session through the channel is not tested yet.
+Prototype. The tests run a JetStream server in process with the production permissions and drive the MCP server over stdio the way Claude Code does.
+
+Verified against a live Claude Code session: the server negotiates a legacy protocol revision, the consumer reads from NATS, events reach `pending`, and the `online` event goes out at start. Not verified yet: the `<channel>` tag in a live session, the plugin install from end to end, and the managed-settings allowlist.
 
 ## Credits
 
