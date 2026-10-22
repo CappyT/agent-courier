@@ -22,6 +22,7 @@ kind=handoff with to=<your login>: the work is yours now. Take the issue as your
 kind=done: an issue closed. Start the work that waited on it, if any.
 kind=blocked: the sender waits on someone. If it is you, answer on the issue.
 kind=note: information only.
+kind=online: the sender's orchestrator now listens on the repo. If you held back a handoff for the sender, send it now.
 When you have handled an event, call ack with its seq. An event without ack comes back later.
 Call handoff when you close an issue another person waits on, when you pass work to someone, or when you are blocked on someone.`
 

@@ -23,6 +23,10 @@ const MaxSummary = 2000
 // Kinds are the event kinds an orchestrator can publish.
 var Kinds = []string{"handoff", "done", "blocked", "note"}
 
+// KindOnline announces that an orchestrator listens on a repo. The bus
+// publishes it when its consumer starts; the agent cannot.
+const KindOnline = "online"
+
 var token = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
 
 // Event is one handoff signal. The issue tracker stays the source of truth:
@@ -48,7 +52,7 @@ func (e Event) Validate() error {
 			return fmt.Errorf("%s %q must match %s", name, v, token)
 		}
 	}
-	if !slices.Contains(Kinds, e.Kind) {
+	if !slices.Contains(Kinds, e.Kind) && e.Kind != KindOnline {
 		return fmt.Errorf("kind %q must be one of %s", e.Kind, strings.Join(Kinds, ", "))
 	}
 	if e.To != "" && !ValidToken(e.To) {

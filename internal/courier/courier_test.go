@@ -97,6 +97,17 @@ func TestRoundTrip(t *testing.T) {
 		t.Fatalf("pending after ack: %+v", p)
 	}
 
+	// A consumer that starts announces itself on every followed repo.
+	go func() { _ = bob.Consume(ctx, func(Delivery) {}) }()
+	select {
+	case d := <-got:
+		if d.Event.Kind != KindOnline || d.Event.Sender != "bob" || d.Event.Repo != "hp" {
+			t.Fatalf("got %+v, want online from bob on hp", d)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("no online announcement")
+	}
+
 	// The server refuses an event published under another login.
 	nc, err := nats.Connect(url, mustNkey(t, bobSeed))
 	if err != nil {

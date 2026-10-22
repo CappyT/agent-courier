@@ -164,6 +164,12 @@ func (b *Bus) Consume(ctx context.Context, deliver func(Delivery)) error {
 	if err != nil {
 		return err
 	}
+	for _, r := range b.cfg.Repos {
+		e := Event{Repo: r, Kind: KindOnline, Summary: b.cfg.Login + " is listening on " + r}
+		if _, err := b.Publish(ctx, e); err != nil {
+			slog.Warn("announce online", "repo", r, "err", err)
+		}
+	}
 	<-ctx.Done()
 	cc.Stop()
 	return nil
