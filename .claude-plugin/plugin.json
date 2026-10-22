@@ -1,6 +1,6 @@
 {
   "name": "agent-courier",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Issue events between the orchestrators of different people over NATS JetStream",
   "author": {
     "name": "Gabriele Turelli"

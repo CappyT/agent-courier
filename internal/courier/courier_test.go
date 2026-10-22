@@ -301,3 +301,19 @@ func mustNkey(t *testing.T, seedFile string) nats.Option {
 	}
 	return opt
 }
+
+func TestVersionMatchesPlugin(t *testing.T) {
+	data, err := os.ReadFile("../../.claude-plugin/plugin.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var manifest struct {
+		Version string `json:"version"`
+	}
+	if err := json.Unmarshal(data, &manifest); err != nil {
+		t.Fatal(err)
+	}
+	if manifest.Version != Version {
+		t.Fatalf("plugin.json has version %s, the server has %s", manifest.Version, Version)
+	}
+}

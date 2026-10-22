@@ -11,6 +11,10 @@ import (
 	"github.com/mark3labs/mcp-go/server"
 )
 
+// Version is the release of the server. It matches the version in
+// .claude-plugin/plugin.json and the git tag.
+const Version = "0.2.1"
+
 // ChannelMethod is the notification that pushes an event into a Claude Code
 // session. See https://code.claude.com/docs/en/channels-reference.
 const ChannelMethod = "notifications/claude/channel"
@@ -29,7 +33,7 @@ Call handoff when you close an issue another person waits on, when you pass work
 // NewServer builds the MCP server: a Claude Code channel that pushes the
 // events of the followed repos, plus the handoff, ack and pending tools.
 func NewServer(ctx context.Context, bus *Bus) *server.MCPServer {
-	s := server.NewMCPServer("agent-courier", "0.1.0",
+	s := server.NewMCPServer("agent-courier", Version,
 		server.WithExperimental(map[string]any{"claude/channel": map[string]any{}}),
 		server.WithToolCapabilities(false),
 		server.WithInstructions(instructions),
