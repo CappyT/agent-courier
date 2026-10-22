@@ -13,8 +13,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/mark3labs/mcp-go/server"
-
 	"github.com/CappyT/agent-courier/internal/courier"
 )
 
@@ -41,7 +39,7 @@ func run() error {
 	}
 	defer bus.Close()
 
-	return server.ServeStdio(courier.NewServer(ctx, bus))
+	return courier.ServeStdio(ctx, courier.NewServer(ctx, bus), os.Stdin, os.Stdout)
 }
 
 func configFromEnv() (courier.Config, error) {

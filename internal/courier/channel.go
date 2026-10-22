@@ -3,6 +3,7 @@ package courier
 import (
 	"context"
 	"fmt"
+	"io"
 	"strings"
 	"sync"
 
@@ -109,4 +110,16 @@ func NewServer(ctx context.Context, bus *Bus) *server.MCPServer {
 	})
 
 	return s
+}
+
+// ServeStdio serves s over in and out until ctx ends.
+// Protocol 2026-07-28 drops the initialize handshake and gives Claude Code no
+// path for channel notifications, so server/discover offers only the legacy
+// revisions and the client falls back to initialize.
+func ServeStdio(ctx context.Context, s *server.MCPServer, in io.Reader, out io.Writer) error {
+	stdio := server.NewStdioServer(s)
+	stdio.SetContextFunc(func(ctx context.Context) context.Context {
+		return server.WithSupportedProtocolVersions(ctx, mcp.LegacyProtocolVersions())
+	})
+	return stdio.Listen(ctx, in, out)
 }
