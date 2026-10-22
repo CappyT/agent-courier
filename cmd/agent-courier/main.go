@@ -85,11 +85,10 @@ func configFromEnv() (courier.Config, error) {
 	}
 
 	if len(cfg.Repos) == 0 {
-		dir := os.Getenv("COURIER_PROJECT_DIR")
-		if dir == "" {
-			if dir, err = os.Getwd(); err != nil {
-				return cfg, err
-			}
+		// Claude Code starts an MCP server in the project directory.
+		dir, err := os.Getwd()
+		if err != nil {
+			return cfg, err
 		}
 		repo := detectRepo(dir)
 		if !courier.ValidToken(repo) {

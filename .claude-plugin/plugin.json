@@ -25,8 +25,7 @@
       "command": "agent-courier",
       "env": {
         "COURIER_NATS_URL": "${user_config.natsUrl}",
-        "COURIER_LOGIN": "${user_config.login}",
-        "COURIER_PROJECT_DIR": "${CLAUDE_PROJECT_DIR}"
+        "COURIER_LOGIN": "${user_config.login}"
       }
     }
   },
