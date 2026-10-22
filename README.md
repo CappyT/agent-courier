@@ -59,7 +59,7 @@ To register a person, add a user with their public key and their login in the pu
 
 Prototype. The tests run a JetStream server in process with the production permissions and drive the MCP server over stdio the way Claude Code does.
 
-Verified against a live Claude Code session: the server negotiates a legacy protocol revision, the consumer reads from NATS, events reach `pending`, and the `online` event goes out at start. Not verified yet: the `<channel>` tag in a live session, the plugin install from end to end, and the managed-settings allowlist.
+Verified against a live Claude Code session: the plugin installs from the release tag, the managed-settings allowlist registers the channel without the development flag, an event from another login arrives as a `<channel>` tag, and `ack` clears it from `pending`.
 
 ## Credits
 
