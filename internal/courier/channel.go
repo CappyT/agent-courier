@@ -13,7 +13,7 @@ import (
 
 // Version is the release of the server. It matches the version in
 // .claude-plugin/plugin.json and the git tag.
-const Version = "0.3.2"
+const Version = "0.3.3"
 
 // MaxPendingShown and MaxPendingBytes cap the events one pending call
 // returns.
