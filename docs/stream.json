@@ -3,7 +3,7 @@
   "subjects": ["courier.*.*.*"],
   "retention": "limits",
   "storage": "file",
-  "discard": "old",
+  "discard": "new",
   "max_age": 2592000000000000,
   "max_bytes": 1073741824,
   "max_msgs_per_subject": 10000,

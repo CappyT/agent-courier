@@ -560,6 +560,56 @@ func TestBudgetAndRedelivery(t *testing.T) {
 	}
 }
 
+// TestFloodKeepsTheEventsOfOthers fills the stream from one user on many
+// topics. The server rejects the flood and keeps the older events of
+// others, and the per-subject cap drops only the flooder's own oldest event.
+func TestFloodKeepsTheEventsOfOthers(t *testing.T) {
+	url, seeds := startNATS(t, "alice", "bob")
+	ctx := t.Context()
+	admin := adminJS(t, url, seeds)
+	cfg := streamConfig(t)
+	cfg.MaxBytes, cfg.MaxMsgsPerSubject = 32*1024, 3
+	if _, err := admin.UpdateStream(ctx, cfg); err != nil {
+		t.Fatal(err)
+	}
+	bob := connect(t, url, seeds, "bob")
+	first, err := bob.Publish(ctx, Event{Topic: "hp", Kind: "handoff", To: "carol", Summary: "for carol, offline"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	alice := connect(t, url, seeds, "alice")
+	for i := range 4 {
+		if _, err := alice.Publish(ctx, Event{Topic: "one", Kind: "note", Summary: "n" + strconv.Itoa(i)}); err != nil {
+			t.Fatalf("per-subject cap rejected note %d: %v", i, err)
+		}
+	}
+	rejected := false
+	for i := range 400 {
+		e := Event{Topic: "t" + strconv.Itoa(i), Kind: "note", Summary: strings.Repeat("x", MaxSummary)}
+		if _, err := alice.Publish(ctx, e); err != nil {
+			rejected = true
+			break
+		}
+	}
+	if !rejected {
+		t.Fatal("the full stream accepted every publish")
+	}
+	s, err := admin.Stream(ctx, StreamName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.GetMsg(ctx, first); err != nil {
+		t.Fatalf("bob's event was dropped: %v", err)
+	}
+	info, err := s.Info(ctx, jetstream.WithSubjectFilter("courier.one.alice.note"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := info.State.Subjects["courier.one.alice.note"]; n != 3 {
+		t.Fatalf("alice's subject keeps %d notes, want 3", n)
+	}
+}
+
 func connect(t *testing.T, url string, seeds map[string]string, login string, topics ...string) *Bus {
 	t.Helper()
 	if len(topics) == 0 {
