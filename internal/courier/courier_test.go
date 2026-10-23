@@ -157,6 +157,10 @@ func TestRoundTrip(t *testing.T) {
 	if _, err := alice.Publish(ctx, Event{Topic: "hp", Kind: "note", Summary: "own event"}); err != nil {
 		t.Fatal(err)
 	}
+	// An event for another login never reaches alice's session.
+	if _, err := bob.Publish(ctx, Event{Topic: "hp", Kind: "handoff", To: "carol", Issue: 9, Summary: "issue 9 is carol's"}); err != nil {
+		t.Fatal(err)
+	}
 	seq, err := bob.Publish(ctx, Event{Topic: "hp", Kind: "handoff", To: "alice", Issue: 8, Summary: "issue 8 is yours"})
 	if err != nil {
 		t.Fatal(err)

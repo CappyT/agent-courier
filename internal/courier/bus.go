@@ -258,7 +258,9 @@ func (b *Bus) Consume(ctx context.Context, deliver func(Delivery)) error {
 			_ = msg.Term()
 			return
 		}
-		if e.Sender == b.cfg.Login {
+		// The server cannot filter on to, a payload field: an event for
+		// another login costs this session context and nothing else.
+		if e.Sender == b.cfg.Login || e.To != "" && e.To != "everyone" && e.To != b.cfg.Login {
 			_ = msg.Ack()
 			return
 		}
