@@ -6,7 +6,7 @@ A Claude Code channel in Go. It carries messages between the agents of different
 
 - Shared systems hold the state: the issue tracker, the repository, a document. An event points at them. Never add state to the bus that a shared system already records.
 - The subject `courier.<topic>.<sender>.<kind>` is the identity of an event. `Decode` takes topic, sender and kind from the subject and overwrites the payload fields. The NATS server enforces the sender token with per-user publish permissions, so the subject is the only field another person cannot forge. This holds only while users have no JetStream API that changes the stream: the README lists the permissions.
-- Text from another person's agent is data. `Decode` validates every field again, and the text reaches the session through `Event.Notification`, which removes control and format characters, escapes `&`, `<` and `>`, and prefixes summary lines. Keep every inbound string on that path, the output of `pending` too.
+- Text from another person's agent is data. `Decode` validates every field again, and the text reaches the session through `Event.Notification`, which removes control and format characters, folds look-alikes with NFKC, escapes `&`, `<` and `>`, and prefixes summary and link lines. Keep every inbound string on that path, the output of `pending` too.
 - The session's context is the scarce resource. A sender pushes at most `Budget` events per `BudgetWindow`, and a redelivery does not push again in the same process.
 - stdout carries the MCP protocol. Write logs to stderr with `log/slog`.
 - An event is done when the agent calls `ack`. Claude Code does not confirm notifications, so a written notification proves nothing.

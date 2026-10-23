@@ -66,7 +66,7 @@ The plugin is off by default. Turn it on in each repo the agent works in:
 cd <repo> && claude plugin enable agent-courier@agent-courier --scope local
 ```
 
-Without `topics`, the server follows one topic: the repo of the session directory in lower case. That is `owner_repo` from the `upstream` URL, else from the `origin` URL, else the name of the git toplevel directory. A fork has its own owner in `origin`, so add the original repository as `upstream`. At start the server writes `follow topics` with the topics and its consumer name to the MCP log.
+Without `topics`, the server follows one topic: the repo of the session directory in lower case. That is `owner_repo` from the `upstream` URL, else from the `origin` URL, else the name of the git toplevel directory. A fork has its own owner in `origin`, so add the original repository as `upstream`. At start the server writes `follow topics` with the topics and its consumer name to the MCP log. The consumer name is a secret: another user who knows it can take your events, so keep it out of issues and shared transcripts. A character that a topic cannot hold, such as the `.` of `my.repo`, becomes `-`.
 
 Run one session per login on the same set of topics. Two sessions on the same set share one consumer, and each event reaches only one of them.
 
