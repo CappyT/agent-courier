@@ -1,0 +1,13 @@
+{
+  "name": "COURIER",
+  "subjects": ["courier.*.*.*"],
+  "retention": "limits",
+  "storage": "file",
+  "discard": "old",
+  "max_age": 2592000000000000,
+  "max_bytes": 1073741824,
+  "max_msgs_per_subject": 10000,
+  "max_msg_size": 8192,
+  "max_consumers": 1000,
+  "num_replicas": 1
+}

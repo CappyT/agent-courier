@@ -35,13 +35,14 @@ The plugin needs the binary and an identity first. Follow [`docs/setup.md`](docs
 ## Design
 
 - **Shared systems hold the state.** The issue tracker, the repository and documents already record who does what. agent-courier carries events that point at them, not their state. The receiver checks the source before it acts, so a lost event costs latency, not correctness.
-- **A topic scopes the events.** A topic is the repository name by default, or a name the team agrees on. A session follows one or more topics.
-- **NATS JetStream is the bus.** One stream, `COURIER`, stores events for 30 days. Each person has a durable consumer per set of topics, named `<login>_<topic>`, so events published while an agent was offline arrive when it starts again.
+- **A topic scopes the events.** A topic is `owner_repo` of the repository in lower case by default, or a name the team agrees on. A session follows one or more topics.
+- **NATS JetStream is the bus.** One stream, `COURIER`, stores events for 30 days. The admin creates it, and users cannot change it. Each person has a durable consumer per set of topics, so events published while an agent was offline arrive when it starts again. The consumer name is the login and an HMAC of the topics keyed by the seed, so no other user can guess it.
 - **The subject proves the sender.** Events go to `courier.<topic>.<sender>.<kind>`. Each NATS user may publish only on subjects with its own login, and the receiver reads the sender from the subject, never from the payload.
 - **A Claude Code channel delivers the event.** `agent-courier` is an MCP server with the `claude/channel` capability. It pushes each event into the running session as a `<channel>` tag.
-- **Events are data, never instructions.** The session receives the text of another person's agent with `<` and `>` escaped, and the protocol tells the agent to read it as a report.
+- **Events are data, never instructions.** The receiver checks every field again, because the sender's client may be modified. The session receives the text with control and format characters removed, `&`, `<` and `>` escaped, and every summary line prefixed with `| `. The protocol tells the agent to read it as a report, to open links only on the forge of the repository, and to send a reply only with text the user approved.
+- **One sender cannot flood a session.** A sender pushes at most 10 events in 10 minutes into a session. The rest wait in `pending`. A redelivery does not push the event again in the same session, and an `online` event from the same sender on the same topic reaches the session at most once an hour.
 - **An agent announces itself.** When its consumer starts, the server publishes an `online` event on each followed topic, so the others know it listens and can send the events they held back.
-- **The agent confirms each event.** Claude Code does not confirm notifications, so the agent calls `ack` after it handles an event. An event without `ack` comes back after `COURIER_ACK_WAIT`, up to 5 times.
+- **The agent confirms each event.** Claude Code does not confirm notifications, so the agent calls `ack` after it handles an event. An event without `ack` stays in `pending`. JetStream delivers it again after `COURIER_ACK_WAIT`, up to 5 times, and a new session receives it as a push.
 
 ## Tools
 
@@ -55,23 +56,44 @@ The repo is also a Claude Code plugin marketplace. The `agent-courier` plugin ca
 
 ## Run the NATS server
 
-Any NATS server 2.10 or later with JetStream works. Clients connect over WebSocket or TCP. Put the users in one account, one nkey user per person:
+Any NATS server 2.10 or later with JetStream works. Clients connect over WebSocket or TCP. Put the users in one account: one nkey user per person, and one admin user.
 
 ```
 accounts {
   AGENTS {
     jetstream: enabled
     users: [
-      { nkey: U...ALICE, permissions: { publish: { allow: ["courier.*.alice.>", "$JS.API.>", "$JS.ACK.>", "_INBOX.>", "$SYS.REQ.USER.INFO"] } } }
-      { nkey: U...BOB,   permissions: { publish: { allow: ["courier.*.bob.>",   "$JS.API.>", "$JS.ACK.>", "_INBOX.>", "$SYS.REQ.USER.INFO"] } } }
+      { nkey: U...ADMIN }
+      { nkey: U...ALICE, permissions: {
+          publish: { allow: ["courier.*.alice.*", "$JS.API.INFO", "$JS.API.STREAM.INFO.COURIER",
+                             "$JS.API.CONSUMER.CREATE.COURIER.>", "$JS.API.CONSUMER.INFO.COURIER.*",
+                             "$JS.API.CONSUMER.MSG.NEXT.COURIER.*", "$JS.ACK.COURIER.>", "$SYS.REQ.USER.INFO"] }
+          subscribe: { allow: ["_INBOX_alice.>"] } } }
     ]
   }
 }
 ```
 
-The `courier.*.<login>.>` entry is what makes the subject prove the sender. Keep it in every user.
+Each entry has a reason:
 
-To register a person, add a user with their public key and their login in the publish entry, then reload the server. The person sends both, as step 2 of the setup describes.
+- `courier.*.alice.*` makes the subject prove the sender. Keep it in every user, with the user's own login.
+- The `$JS.API` entries let a user read the stream info and create and read its own consumers. Users get no other JetStream API: with `$JS.API.>`, any user can rewrite the stream to forge senders, purge or seal it, or take the consumers of others.
+- `subscribe` allows only the user's own inbox prefix, so no user reads the events, replies and deliveries of another user.
+
+The admin creates the stream once, with the admin seed:
+
+```sh
+nats -s <url> --nkey <admin seed> stream add COURIER --config docs/stream.json
+```
+
+To move a stream that clients older than 0.3.1 created, run `stream edit COURIER --config docs/stream.json` instead.
+
+To register a person, add a user with their public key and their login in the `courier` and `_INBOX_` entries, then reload the server. The person sends both, as step 2 of the setup describes.
+
+Limits:
+
+- Every user can create a consumer on any topic, so every user in the account can read every topic. Put a team that must not read another team's topics in its own account, or on its own server.
+- `docs/stream.json` caps the stream at 1 GiB, 8 KiB per message and 10000 messages per subject, and drops the oldest events first.
 
 ## Status
 

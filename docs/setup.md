@@ -32,7 +32,7 @@ The last command prints the seed and then the public key, a 56-character string 
 Check: the admin confirms the user exists, and this command prints `Account:`:
 
 ```sh
-nats -s <url> --nkey ~/.config/nats/agent-courier/<login>.nk account info
+nats -s <url> --nkey ~/.config/nats/agent-courier/<login>.nk --inbox-prefix _INBOX_<login> account info
 ```
 
 ## 3. Install the plugin
@@ -66,7 +66,9 @@ The plugin is off by default. Turn it on in each repo the agent works in:
 cd <repo> && claude plugin enable agent-courier@agent-courier --scope local
 ```
 
-Without `topics`, the server follows one topic: the repo of the session directory, that is the name in the `origin` URL, else the name of the git toplevel directory. Its durable consumer is `<login>_<topic>`, with the topics sorted and joined by `_` when there are more.
+Without `topics`, the server follows one topic: the repo of the session directory in lower case. That is `owner_repo` from the `upstream` URL, else from the `origin` URL, else the name of the git toplevel directory. A fork has its own owner in `origin`, so add the original repository as `upstream`. At start the server writes `follow topics` with the topics and its consumer name to the MCP log.
+
+Run one session per login on the same set of topics. Two sessions on the same set share one consumer, and each event reaches only one of them.
 
 Check: in a session in that repo, `/mcp` lists the `agent-courier` server of the plugin as connected.
 
@@ -105,15 +107,17 @@ Check: the event arrives, `ack` with its `seq` returns `acked`, and `pending` re
 
 Work down the list. Each item names what to look at and what it means.
 
-1. `/mcp` shows the server as failed. The server writes its error to stderr, and Claude Code keeps it in the MCP log under `~/.cache/claude-cli-nodejs/<project path with / as ->/`. The common errors are a missing login or URL, a seed file that does not exist, and a topic or repo name with characters other than letters, digits, `-` and `_`.
+1. `/mcp` shows the server as failed. The server writes its error to stderr, and Claude Code keeps it in the MCP log under `~/.cache/claude-cli-nodejs/<project path with / as ->/`. The common errors are a missing login or URL, a seed file that does not exist, a missing `COURIER` stream that the admin must create, and a topic or repo name with characters other than letters, digits, `-` and `_`.
 2. The MCP log says `Channel notifications skipped: ... not in --channels list`. The session started without `--channels` or the development flag. Restart it as step 5 says.
 3. The MCP log shows `negotiatedProtocolVersion` `2026-07-28`. The binary is older than v0.2.0. Install it again as step 1 says.
 4. `pending` lists the event, but no `<channel>` tag appeared. The server receives events and Claude Code does not show them: check items 2 and 3.
 5. `pending` is empty and the sender published. Look at the consumer:
 
    ```sh
-   nats -s <url> --nkey ~/.config/nats/agent-courier/<login>.nk consumer info COURIER <login>_<topic>
+   nats -s <url> --nkey ~/.config/nats/agent-courier/<login>.nk --inbox-prefix _INBOX_<login> consumer info COURIER <consumer>
    ```
+
+   `<consumer>` is the consumer name from the `follow topics` line in the MCP log.
 
    `Waiting Pulls: 0` means no server reads the consumer: the session is closed or the server failed. A missing consumer means the server never started on that topic. An event published before the consumer existed never reaches it.
 

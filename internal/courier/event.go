@@ -6,11 +6,13 @@ import (
 	"cmp"
 	"encoding/json/v2"
 	"fmt"
+	"net/url"
 	"regexp"
 	"slices"
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 )
 
 // SubjectPrefix is the first token of every event subject:
@@ -19,6 +21,9 @@ const SubjectPrefix = "courier"
 
 // MaxSummary caps the summary so one event cannot flood a session.
 const MaxSummary = 2000
+
+// MaxURL caps the link of an event.
+const MaxURL = 300
 
 // Kinds are the event kinds an agent can publish.
 var Kinds = []string{"handoff", "done", "blocked", "ask", "reply", "note"}
@@ -66,6 +71,17 @@ func (e Event) Validate() error {
 	if e.To != "" && !ValidToken(e.To) {
 		return fmt.Errorf("to %q must match %s", e.To, token)
 	}
+	if e.Issue < 0 {
+		return fmt.Errorf("issue %d must be positive", e.Issue)
+	}
+	if e.URL != "" {
+		if len(e.URL) > MaxURL {
+			return fmt.Errorf("url is %d bytes, the limit is %d", len(e.URL), MaxURL)
+		}
+		if u, err := url.Parse(e.URL); err != nil || u.Scheme != "https" || u.Host == "" {
+			return fmt.Errorf("url %q must be an https link", e.URL)
+		}
+	}
 	if strings.TrimSpace(e.Summary) == "" {
 		return fmt.Errorf("summary is empty")
 	}
@@ -86,6 +102,7 @@ func TopicFilter(topic string) string { return SubjectPrefix + "." + topic + ".>
 // Decode reads an event received on subject. Topic, sender and kind come from
 // the subject, never from the payload: the server enforces the sender token
 // with per-user publish permissions, so the payload cannot claim another one.
+// The sender's client may be modified, so Decode checks every field again.
 func Decode(subject string, data []byte) (Event, error) {
 	parts := strings.Split(subject, ".")
 	if len(parts) != 4 || parts[0] != SubjectPrefix {
@@ -96,8 +113,8 @@ func Decode(subject string, data []byte) (Event, error) {
 		return Event{}, fmt.Errorf("payload on %s: %w", subject, err)
 	}
 	e.Topic, e.Sender, e.Kind = parts[1], parts[2], parts[3]
-	if len(e.Summary) > MaxSummary {
-		e.Summary = e.Summary[:MaxSummary]
+	if err := e.Validate(); err != nil {
+		return Event{}, fmt.Errorf("event on %s: %w", subject, err)
 	}
 	return e, nil
 }
@@ -115,10 +132,13 @@ func (e Event) Notification(seq uint64) (string, map[string]string) {
 	if e.Re != 0 {
 		fmt.Fprintf(&b, " re seq %d", e.Re)
 	}
-	b.WriteString("\n")
-	b.WriteString(escape(e.Summary))
+	// Every summary line starts with "| ", so no line of it can pass for
+	// a header line.
+	for line := range strings.Lines(clean(e.Summary)) {
+		b.WriteString("\n| " + escape(strings.TrimRight(line, "\n")))
+	}
 	if e.URL != "" {
-		b.WriteString("\n" + escape(e.URL))
+		b.WriteString("\n" + escape(clean(e.URL)))
 	}
 	meta := map[string]string{
 		"topic":  e.Topic,
@@ -139,5 +159,22 @@ func (e Event) Notification(seq uint64) (string, map[string]string) {
 // escape keeps text written by another person's agent inside the <channel>
 // tag that Claude Code wraps around the content.
 func escape(s string) string {
-	return strings.NewReplacer("<", "&lt;", ">", "&gt;").Replace(s)
+	return strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;").Replace(s)
+}
+
+// clean drops control and format characters, such as bidi overrides and
+// zero-width spaces, which can hide text from the user who reads the
+// session. It keeps newlines and turns tabs into spaces.
+func clean(s string) string {
+	return strings.Map(func(r rune) rune {
+		switch {
+		case r == '\n':
+			return r
+		case r == '\t':
+			return ' '
+		case unicode.IsControl(r), unicode.Is(unicode.Cf, r), r == unicode.ReplacementChar:
+			return -1
+		}
+		return r
+	}, s)
 }
