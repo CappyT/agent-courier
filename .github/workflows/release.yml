@@ -1,0 +1,27 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  ci:
+    uses: ./.github/workflows/ci.yml
+
+  release:
+    needs: ci
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - name: Check that the tag matches both versions
+        run: |
+          v="${GITHUB_REF_NAME#v}"
+          grep -qx "const Version = \"$v\"" internal/courier/channel.go
+          jq -e --arg v "$v" '.version == $v' .claude-plugin/plugin.json
+      - run: gh release create "$GITHUB_REF_NAME" --verify-tag --generate-notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+      # go install resolves the tag through the module proxy; fetch it once so the version is there at once.
+      - run: curl -fsS "https://proxy.golang.org/github.com/!cappy!t/agent-courier/@v/${GITHUB_REF_NAME}.info"
