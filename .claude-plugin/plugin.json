@@ -5,6 +5,10 @@
   "author": {
     "name": "Gabriele Turelli"
   },
+  "homepage": "https://github.com/CappyT/agent-courier",
+  "repository": "https://github.com/CappyT/agent-courier",
+  "license": "Apache-2.0",
+  "keywords": ["channel", "handoff", "nats", "jetstream", "issues", "orchestration"],
   "defaultEnabled": false,
   "userConfig": {
     "login": {
