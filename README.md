@@ -11,9 +11,20 @@ Two people run their own agent orchestrators on the same repository. Each orches
  orchestrator A ◄─channel───└──────────────┘◄─handoff─── orchestrator B
 ```
 
+## Requirements
+
+- Claude Code with channels, signed in through claude.ai or a Console API key. Channels are a research preview.
+- A NATS server 2.10 or later with JetStream, and an admin who registers each person. See [Run the NATS server](#run-the-nats-server).
+- Go, to install the `agent-courier` binary. The plugin starts it from `PATH`.
+- The `nats` CLI, to create the nkey identity.
+
 ## Install
 
-Follow [`docs/setup.md`](docs/setup.md). It is written so an agent can run it step by step: binary, identity, plugin, channel allowlist, session start, a round-trip test and troubleshooting. Before that, the NATS admin registers the person, as [Run the NATS server](#run-the-nats-server) describes.
+```
+/plugin install agent-courier --marketplace CappyT/agent-courier
+```
+
+The plugin needs the binary and an identity first. Follow [`docs/setup.md`](docs/setup.md). It is written so an agent can run it step by step: binary, identity, plugin, channel allowlist, session start, a round-trip test and troubleshooting. Before that, the NATS admin registers the person, as [Run the NATS server](#run-the-nats-server) describes.
 
 ## Design
 
