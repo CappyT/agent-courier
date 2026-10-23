@@ -1,6 +1,6 @@
 {
   "name": "agent-courier",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "Messages between the Claude Code agents of different people over NATS JetStream",
   "author": {
     "name": "Gabriele Turelli"
