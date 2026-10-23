@@ -36,15 +36,17 @@ type swarm struct {
 	courPub                             string
 	courClaims                          *jwt.AccountClaims
 
-	mu       sync.Mutex
-	policyOf func(key string) *policy
-	issued   map[string][]string // client key -> ephemeral user subjects
-	maxConns int
-	conns    map[string]int // client key -> live connections (callout view)
-	byEph    map[string]string
-	calloutN int
-	lastDisc string
-	callout  *nats.Subscription
+	mu            sync.Mutex
+	policyOf      func(key string) *policy
+	issued        map[string][]string // client key -> ephemeral user subjects
+	maxConns      int
+	conns         map[string]int // client key -> live connections (callout view)
+	byEph         map[string]string
+	calloutN      int
+	lastDisc      string
+	callout       *nats.Subscription
+	connectDomain string
+	delay         time.Duration
 }
 
 func kp(t *testing.T, f func() (nkeys.KeyPair, error)) nkeys.KeyPair {
@@ -228,7 +230,14 @@ func (sw *swarm) handle(m *nats.Msg) {
 			return
 		}
 	}
-	if err := pk.Verify([]byte(req.ClientInformation.Nonce), sig); err != nil {
+	signed := []byte(req.ClientInformation.Nonce)
+	if sw.connectDomain != "" {
+		signed = []byte("agent-courier-connect-v1\n" + sw.connectDomain + "\n" + req.ClientInformation.Nonce)
+	}
+	if sw.delay > 0 {
+		time.Sleep(sw.delay)
+	}
+	if err := pk.Verify(signed, sig); err != nil {
 		refuse("nonce signature does not match nkey")
 		return
 	}
