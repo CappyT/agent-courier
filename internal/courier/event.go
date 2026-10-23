@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 	"unicode"
+	"unicode/utf8"
 
 	"golang.org/x/text/unicode/norm"
 )
@@ -23,6 +24,15 @@ const SubjectPrefix = "courier"
 
 // MaxSummary caps the summary so one event cannot flood a session.
 const MaxSummary = 2000
+
+// Escaping and NFKC can make a summary longer than MaxSummary, so
+// Notification also caps the rendered summary at MaxRenderedRunes and
+// MaxRenderedLines. MaxMarks caps the combining marks on one character.
+const (
+	MaxRenderedRunes = 2400
+	MaxRenderedLines = 40
+	MaxMarks         = 2
+)
 
 // MaxURL caps the link of an event.
 const MaxURL = 300
@@ -139,8 +149,24 @@ func (e Event) Notification(seq uint64) (string, map[string]string) {
 	}
 	// Every summary line starts with "| ", so no line of it can pass for
 	// a header line.
+	runes, lines := 0, 0
 	for line := range strings.Lines(clean(e.Summary)) {
-		b.WriteString("\n| " + escape(strings.TrimRight(line, "\n")))
+		line = escape(strings.TrimRight(line, "\n"))
+		if lines == MaxRenderedLines || runes == MaxRenderedRunes {
+			b.WriteString("\n| [truncated]")
+			break
+		}
+		cut := false
+		if n := utf8.RuneCountInString(line); runes+n > MaxRenderedRunes {
+			line, cut = string([]rune(line)[:MaxRenderedRunes-runes]), true
+		}
+		runes += utf8.RuneCountInString(line)
+		lines++
+		b.WriteString("\n| " + line)
+		if cut {
+			b.WriteString("\n| [truncated]")
+			break
+		}
 	}
 	if e.URL != "" {
 		b.WriteString("\n| " + escape(e.URL))
@@ -167,21 +193,34 @@ func escape(s string) string {
 	return strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;").Replace(s)
 }
 
-// clean drops control and format characters, such as bidi overrides and
-// zero-width spaces, which can hide text from the user who reads the
-// session. It keeps newlines, turns Unicode line and paragraph separators
-// into newlines, and tabs into spaces. NFKC first folds look-alikes such as
-// the fullwidth "＜" into the ASCII characters that escape replaces.
+// clean keeps only visible characters and newlines, so text cannot hide
+// from the user who reads the session: it drops control and format
+// characters such as bidi overrides, private-use and unassigned code points,
+// variation selectors and other default-ignorable characters, and keeps at
+// most MaxMarks combining marks on one character. It turns Unicode line and
+// paragraph separators into newlines, and tabs and the braille blank into
+// spaces. NFKC first folds look-alikes such as the fullwidth "＜" into the
+// ASCII characters that escape replaces.
 func clean(s string) string {
-	return strings.Map(func(r rune) rune {
+	var b strings.Builder
+	marks := 0
+	for _, r := range norm.NFKC.String(s) {
 		switch {
 		case r == '\n', unicode.In(r, unicode.Zl, unicode.Zp):
-			return '\n'
-		case r == '\t':
-			return ' '
-		case unicode.IsControl(r), unicode.Is(unicode.Cf, r), r == unicode.ReplacementChar:
-			return -1
+			r = '\n'
+		case r == '\t', r == '\u2800':
+			r = ' '
+		case !unicode.IsGraphic(r), unicode.In(r, unicode.Variation_Selector, unicode.Other_Default_Ignorable_Code_Point):
+			continue
 		}
-		return r
-	}, norm.NFKC.String(s))
+		if unicode.In(r, unicode.Mn, unicode.Me) {
+			if marks++; marks > MaxMarks {
+				continue
+			}
+		} else {
+			marks = 0
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
 }

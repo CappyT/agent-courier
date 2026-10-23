@@ -32,6 +32,16 @@ const (
 	BudgetWindow = 10 * time.Minute
 )
 
+// A sender holds at most HoldPerSender events without ack, direct and other
+// events each, and all senders together hold at most MaxHeld other events.
+// admit acks the events over these caps and only counts them, so a flood
+// cannot fill MaxAckPending and stall the consumer.
+const (
+	HoldPerSender = 20
+	MaxHeld       = 200
+	MaxAckPending = 1000
+)
+
 // maxTracked is the number of budget and online entries above which admit
 // drops the expired ones.
 const maxTracked = 1024
@@ -94,8 +104,9 @@ type Bus struct {
 }
 
 type budget struct {
-	start  time.Time
-	pushed int
+	start   time.Time
+	pushed  int
+	dropped int
 }
 
 type pendingMsg struct {
@@ -232,6 +243,7 @@ func (b *Bus) Consume(ctx context.Context, deliver func(Delivery)) error {
 		AckPolicy:         jetstream.AckExplicitPolicy,
 		AckWait:           b.cfg.AckWait,
 		MaxDeliver:        5,
+		MaxAckPending:     MaxAckPending,
 		DeliverPolicy:     jetstream.DeliverNewPolicy,
 		InactiveThreshold: 30 * 24 * time.Hour,
 	})
@@ -290,9 +302,8 @@ func (b *Bus) admit(msg jetstream.Msg, d Delivery) (Delivery, bool) {
 	}
 	d.Direct = d.Event.To == b.cfg.Login && slices.Contains([]string{"handoff", "ask", KindReply}, d.Event.Kind)
 	d.ForeignRe = d.Event.Kind == KindReply && !b.asked[d.Event.Re]
-	_, seen := b.pending[d.Seq]
-	b.pending[d.Seq] = pendingMsg{msg: msg, delivery: d}
-	if seen {
+	if _, seen := b.pending[d.Seq]; seen {
+		b.pending[d.Seq] = pendingMsg{msg: msg, delivery: d}
 		return d, false
 	}
 	b.prune(now)
@@ -305,6 +316,15 @@ func (b *Bus) admit(msg jetstream.Msg, d Delivery) (Delivery, bool) {
 		bg = &budget{start: now}
 		b.budgets[key] = bg
 	}
+	if b.overHold(d) {
+		bg.dropped++
+		_ = msg.Ack()
+		if bg.dropped == 1 {
+			slog.Warn("drop events over the hold cap", "sender", d.Event.Sender, "seq", d.Seq)
+		}
+		return d, false
+	}
+	b.pending[d.Seq] = pendingMsg{msg: msg, delivery: d}
 	bg.pushed++
 	switch {
 	case bg.pushed <= Budget:
@@ -318,6 +338,22 @@ func (b *Bus) admit(msg jetstream.Msg, d Delivery) (Delivery, bool) {
 
 // prune drops expired entries, so many senders cannot grow the maps
 // without limit.
+// overHold reports whether d's sender, or all senders for an event that is
+// not direct, already hold the most events without ack.
+func (b *Bus) overHold(d Delivery) bool {
+	sender, all := 0, 0
+	for _, p := range b.pending {
+		if p.delivery.Direct != d.Direct {
+			continue
+		}
+		all++
+		if p.delivery.Event.Sender == d.Event.Sender {
+			sender++
+		}
+	}
+	return sender >= HoldPerSender || !d.Direct && all >= MaxHeld
+}
+
 func (b *Bus) prune(now time.Time) {
 	if len(b.budgets) > maxTracked {
 		maps.DeleteFunc(b.budgets, func(_ string, bg *budget) bool { return now.Sub(bg.start) >= BudgetWindow })

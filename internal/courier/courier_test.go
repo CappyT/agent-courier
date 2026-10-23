@@ -13,6 +13,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/nats-io/nats-server/v2/server"
@@ -660,5 +661,129 @@ func TestVersionMatchesPlugin(t *testing.T) {
 	}
 	if manifest.Version != Version {
 		t.Fatalf("plugin.json has version %s, the server has %s", manifest.Version, Version)
+	}
+}
+
+func TestCleanDropsHiddenCharacters(t *testing.T) {
+	for name, s := range map[string]string{
+		"variation selector":        "a️b",
+		"variation selector supp":   "a\U000E0100b",
+		"mongolian variation":       "a᠋b",
+		"tag character":             "a\U000E0041b",
+		"hangul filler":             "aㅤb",
+		"hangul choseong filler":    "aᅟb",
+		"halfwidth hangul filler":   "aﾠb",
+		"combining grapheme joiner": "a͏b",
+		"khmer inherent vowel":      "a឴b",
+		"private use":               "ab",
+		"unassigned":                "a͸b",
+		"bidi override":             "a‮b",
+		"zero width space":          "a​b",
+	} {
+		if got := clean(s); got != "ab" {
+			t.Errorf("%s: clean(%+q) = %+q, want \"ab\"", name, s, got)
+		}
+	}
+	if got := clean("a⠀b"); got != "a b" {
+		t.Errorf("braille blank: got %+q, want \"a b\"", got)
+	}
+	if got := clean("a" + strings.Repeat("̶", 50) + "b"); got != "a̶̶b" {
+		t.Errorf("combining marks: got %+q, want two marks", got)
+	}
+}
+
+func TestNotificationCapsTheRenderedText(t *testing.T) {
+	for name, s := range map[string]string{
+		"expanding ligature": strings.Repeat("ﷺ", MaxSummary/3),
+		"ampersands":         strings.Repeat("&", MaxSummary),
+		"newlines":           "x" + strings.Repeat("\n", MaxSummary-1),
+	} {
+		e := Event{Topic: "acme_app", Sender: "bob", Kind: "note", Summary: s}
+		if err := e.Validate(); err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		c, _ := e.Notification(1)
+		if n := len(c); n > 4*MaxRenderedRunes {
+			t.Errorf("%s: rendered %d bytes", name, n)
+		}
+		if n := strings.Count(c, "\n| "); n > MaxRenderedLines+1 {
+			t.Errorf("%s: rendered %d summary lines", name, n)
+		}
+		if !strings.HasSuffix(c, "\n| [truncated]") {
+			t.Errorf("%s: no truncation marker", name)
+		}
+		if n := utf8.RuneCountInString(c); n < MaxRenderedRunes/2 && name != "newlines" {
+			t.Errorf("%s: rendered only %d runes, the cap drops text it could keep", name, n)
+		}
+	}
+}
+
+// One sender floods notes past MaxAckPending: a direct handoff from another
+// sender still arrives, and the flood holds at most HoldPerSender events.
+func TestFloodDoesNotStallTheConsumer(t *testing.T) {
+	url, seeds := startNATS(t, "alice", "bob", "carol")
+	ctx := t.Context()
+	b, err := Connect(ctx, Config{URL: url, NkeyFile: seeds["alice"], Login: "alice", Topics: []string{"hp"}, AckWait: 30 * time.Second})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(b.Close)
+	bob := connect(t, url, seeds, "bob")
+	carol := connect(t, url, seeds, "carol")
+	got := make(chan Delivery, 4096)
+	go func() { _ = b.Consume(ctx, func(d Delivery) { got <- d }) }()
+	time.Sleep(300 * time.Millisecond)
+	for i := range MaxAckPending + 100 {
+		if _, err := bob.Publish(ctx, Event{Topic: "hp", Kind: "note", Summary: "flood " + strconv.Itoa(i)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := carol.Publish(ctx, Event{Topic: "hp", Kind: "handoff", To: "alice", Issue: 7, Summary: "honest handoff"}); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.After(10 * time.Second)
+	for {
+		select {
+		case d := <-got:
+			if d.Event.Sender != "carol" {
+				continue
+			}
+			if n := len(b.Pending()); n > HoldPerSender+1 {
+				t.Errorf("%d events held, want at most %d", n, HoldPerSender+1)
+			}
+			return
+		case <-deadline:
+			t.Fatalf("carol's handoff did not arrive; %d events held", len(b.Pending()))
+		}
+	}
+}
+
+func TestPendingOutputIsCapped(t *testing.T) {
+	url, seeds := startNATS(t, "alice", "bob")
+	ctx := t.Context()
+	b, err := Connect(ctx, Config{URL: url, NkeyFile: seeds["alice"], Login: "alice", Topics: []string{"hp"}, AckWait: 30 * time.Second})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(b.Close)
+	bob := connect(t, url, seeds, "bob")
+	go func() { _ = b.Consume(ctx, func(Delivery) {}) }()
+	time.Sleep(300 * time.Millisecond)
+	for range MaxPendingShown {
+		if _, err := bob.Publish(ctx, Event{Topic: "hp", Kind: "note", Summary: strings.Repeat("ﷺ", MaxSummary/3)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	time.Sleep(time.Second)
+	res, err := pendingTool(b)(ctx, mcp.CallToolRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := res.Content[0].(mcp.TextContent).Text
+	if len(text) > MaxPendingBytes+4*MaxRenderedRunes {
+		t.Errorf("pending returned %d bytes", len(text))
+	}
+	if !strings.Contains(text, "more events wait") {
+		t.Errorf("pending does not say that more events wait: %d events held, %d bytes", len(b.Pending()), len(text))
 	}
 }
