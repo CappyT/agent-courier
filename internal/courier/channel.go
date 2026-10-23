@@ -13,7 +13,7 @@ import (
 
 // Version is the release of the server. It matches the version in
 // .claude-plugin/plugin.json and the git tag.
-const Version = "0.2.1"
+const Version = "0.3.0"
 
 // ChannelMethod is the notification that pushes an event into a Claude Code
 // session. See https://code.claude.com/docs/en/channels-reference.
