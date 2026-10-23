@@ -93,33 +93,55 @@ func configFromEnv() (courier.Config, error) {
 		if err != nil {
 			return cfg, err
 		}
-		repo := detectRepo(dir)
-		if !courier.ValidToken(repo) {
-			return cfg, fmt.Errorf("repo %q detected in %s is not a valid topic: set COURIER_TOPICS", repo, dir)
+		topic := detectTopic(dir)
+		if !courier.ValidToken(topic) {
+			return cfg, fmt.Errorf("topic %q detected in %s is not valid: set COURIER_TOPICS", topic, dir)
 		}
-		cfg.Topics = []string{repo}
+		cfg.Topics = []string{topic}
 	}
 	return cfg, nil
 }
 
-// detectRepo names the repository of dir: the name in the origin URL, else
-// the git toplevel directory, else dir itself. A worktree lives in a
-// directory with another name, so the origin URL comes first.
-func detectRepo(dir string) string {
-	if out, err := exec.Command("git", "-C", dir, "remote", "get-url", "origin").Output(); err == nil {
-		if name := repoFromURL(string(out)); name != "" {
-			return name
+// detectTopic names the repository of dir in lower case: owner_repo from the
+// upstream or origin URL, else the git toplevel directory, else dir itself.
+// A fork has its own owner in origin, so upstream comes first. A worktree
+// lives in a directory with another name, so the URLs come first.
+func detectTopic(dir string) string {
+	for _, remote := range []string{"upstream", "origin"} {
+		if out, err := exec.Command("git", "-C", dir, "remote", "get-url", remote).Output(); err == nil {
+			if topic := topicFromURL(string(out)); topic != "" {
+				return topic
+			}
 		}
 	}
 	if out, err := exec.Command("git", "-C", dir, "rev-parse", "--show-toplevel").Output(); err == nil {
 		dir = strings.TrimSpace(string(out))
 	}
-	return filepath.Base(dir)
+	return strings.ToLower(filepath.Base(dir))
 }
 
-// repoFromURL takes the repository name from an https, ssh or scp-style
-// remote URL such as git@github.com:owner/name.git.
-func repoFromURL(url string) string {
+// topicFromURL takes owner_repo from an https, ssh or scp-style remote URL
+// such as git@github.com:owner/name.git. An owner has no "_", so the first
+// one splits the topic again. A URL without an owner gives the name alone.
+func topicFromURL(url string) string {
 	url = strings.TrimSuffix(strings.TrimRight(strings.TrimSpace(url), "/"), ".git")
-	return url[strings.LastIndexAny(url, "/:")+1:]
+	rest, name := split(url)
+	if rest == "" {
+		return strings.ToLower(name)
+	}
+	// The segment before the name is the owner, unless it is the host: the
+	// first segment of an scp URL, or the one after the "//" of a scheme.
+	if before, owner := split(rest); before != "" && !strings.HasSuffix(before, "/") {
+		name = owner + "_" + name
+	}
+	return strings.ToLower(name)
+}
+
+// split cuts s at its last "/" or ":".
+func split(s string) (before, last string) {
+	i := strings.LastIndexAny(s, "/:")
+	if i < 0 {
+		return "", s
+	}
+	return s[:i], s[i+1:]
 }

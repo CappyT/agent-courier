@@ -26,7 +26,7 @@
     "topics": {
       "type": "string",
       "title": "Topics",
-      "description": "Topics to follow, separated by commas. Leave empty to follow the repository of the session"
+      "description": "Topics to follow, separated by commas. Leave empty to follow the repository of the session as owner_repo"
     }
   },
   "mcpServers": {

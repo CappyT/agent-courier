@@ -22,8 +22,8 @@ A message points at shared state, it does not hold it. When the message is about
    - blocked: a comment names the person you wait on and the exact question.
 
    Done when a person who reads only the issue knows the next action. For a message about something else, such as a document or a decision, link the place that records it.
-3. **Pick the topic and the receiver.** `topic` is the repository name without owner, or a name the team agreed on. `to` is the receiver's courier login: take it from the `sender` of an earlier event, or ask the user. Leave `to` empty when everyone who follows the topic can act.
-4. **Write the summary.** A few lines: what happened or what you ask, and what the receiver does next. Name branches and pull requests. Pass `issue` when the message is about one, and set `url` to the comment or document from step 2. A reply shares only what the user allows.
+3. **Pick the topic and the receiver.** `topic` is `owner_repo` of the repository in lower case, for example `cappyt_hosting-panel`, or a name the team agreed on. `to` is the receiver's courier login: take it from the `sender` of an earlier event, or ask the user. Leave `to` empty when everyone who follows the topic can act.
+4. **Write the summary.** A few lines: what happened or what you ask, and what the receiver does next. Name branches and pull requests. Pass `issue` when the message is about one, and set `url` to the comment or document from step 2. `url` is an https link of at most 300 bytes. Show a reply to the user and send it only after they approve the text.
 5. **Send** with the `send` tool. Done when the tool returns `published courier.<topic>.<login>.<kind>, seq <n>`.
 6. **Report** to the user: kind, topic, receiver, issue when there is one, and seq.
 
