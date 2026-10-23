@@ -18,13 +18,13 @@ import (
 // StreamName is the JetStream stream that stores every event.
 const StreamName = "COURIER"
 
-// Config selects the server, the identity and the repos to follow.
+// Config selects the server, the identity and the topics to follow.
 type Config struct {
 	URL      string
 	NkeyFile string
 	Login    string
-	Repos    []string
-	// AckWait is how long an event stays with this orchestrator before
+	Topics   []string
+	// AckWait is how long an event stays with this agent before
 	// JetStream delivers it again.
 	AckWait time.Duration
 }
@@ -36,7 +36,7 @@ type Delivery struct {
 	Event     Event
 }
 
-// Bus publishes events and delivers the events of the followed repos.
+// Bus publishes events and delivers the events of the followed topics.
 type Bus struct {
 	cfg Config
 	nc  *nats.Conn
@@ -56,9 +56,9 @@ func Connect(ctx context.Context, cfg Config, opts ...nats.Option) (*Bus, error)
 	if !ValidToken(cfg.Login) {
 		return nil, fmt.Errorf("login %q must match %s", cfg.Login, token)
 	}
-	for _, r := range cfg.Repos {
-		if !ValidToken(r) {
-			return nil, fmt.Errorf("repo %q must match %s", r, token)
+	for _, t := range cfg.Topics {
+		if !ValidToken(t) {
+			return nil, fmt.Errorf("topic %q must match %s", t, token)
 		}
 	}
 	if cfg.NkeyFile != "" {
@@ -117,19 +117,19 @@ func (b *Bus) Publish(ctx context.Context, e Event) (uint64, error) {
 	return ack.Sequence, nil
 }
 
-// Consume delivers the events of the followed repos to deliver until ctx
-// ends. The durable consumer is named after the login and the repos, so
-// events published while the orchestrator was offline arrive when it starts
-// again, and sessions in different repos keep their own filters.
+// Consume delivers the events of the followed topics to deliver until ctx
+// ends. The durable consumer is named after the login and the topics, so
+// events published while the agent was offline arrive when it starts again,
+// and sessions on different topics keep their own filters.
 func (b *Bus) Consume(ctx context.Context, deliver func(Delivery)) error {
-	if len(b.cfg.Repos) == 0 {
-		return fmt.Errorf("no repos to follow")
+	if len(b.cfg.Topics) == 0 {
+		return fmt.Errorf("no topics to follow")
 	}
-	filters := make([]string, 0, len(b.cfg.Repos))
-	for _, r := range b.cfg.Repos {
-		filters = append(filters, RepoFilter(r))
+	filters := make([]string, 0, len(b.cfg.Topics))
+	for _, t := range b.cfg.Topics {
+		filters = append(filters, TopicFilter(t))
 	}
-	durable := b.cfg.Login + "_" + strings.Join(slices.Sorted(slices.Values(b.cfg.Repos)), "_")
+	durable := b.cfg.Login + "_" + strings.Join(slices.Sorted(slices.Values(b.cfg.Topics)), "_")
 	cons, err := b.js.CreateOrUpdateConsumer(ctx, StreamName, jetstream.ConsumerConfig{
 		Durable:        durable,
 		FilterSubjects: filters,
@@ -167,10 +167,10 @@ func (b *Bus) Consume(ctx context.Context, deliver func(Delivery)) error {
 	if err != nil {
 		return err
 	}
-	for _, r := range b.cfg.Repos {
-		e := Event{Repo: r, Kind: KindOnline, Summary: b.cfg.Login + " is listening on " + r}
+	for _, t := range b.cfg.Topics {
+		e := Event{Topic: t, Kind: KindOnline, Summary: b.cfg.Login + " is listening on " + t}
 		if _, err := b.Publish(ctx, e); err != nil {
-			slog.Warn("announce online", "repo", r, "err", err)
+			slog.Warn("announce online", "topic", t, "err", err)
 		}
 	}
 	<-ctx.Done()

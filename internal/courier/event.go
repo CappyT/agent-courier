@@ -1,5 +1,5 @@
-// Package courier carries handoff events between the agent orchestrators of
-// different people over NATS JetStream.
+// Package courier carries messages between the agents of different people
+// over NATS JetStream.
 package courier
 
 import (
@@ -14,29 +14,34 @@ import (
 )
 
 // SubjectPrefix is the first token of every event subject:
-// courier.<repo>.<sender>.<kind>.
+// courier.<topic>.<sender>.<kind>.
 const SubjectPrefix = "courier"
 
 // MaxSummary caps the summary so one event cannot flood a session.
 const MaxSummary = 2000
 
-// Kinds are the event kinds an orchestrator can publish.
-var Kinds = []string{"handoff", "done", "blocked", "note"}
+// Kinds are the event kinds an agent can publish.
+var Kinds = []string{"handoff", "done", "blocked", "ask", "reply", "note"}
 
-// KindOnline announces that an orchestrator listens on a repo. The bus
-// publishes it when its consumer starts; the agent cannot.
+// KindReply answers the ask whose stream sequence is in Event.Re.
+const KindReply = "reply"
+
+// KindOnline announces that an agent listens on a topic. The bus publishes
+// it when its consumer starts; the agent cannot.
 const KindOnline = "online"
 
 var token = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
 
-// Event is one handoff signal. The issue tracker stays the source of truth:
-// an event tells the receiver to look, it does not carry state.
+// Event is one message between agents. Shared systems such as the issue
+// tracker stay the source of truth: an event points at them, it does not
+// carry their state.
 type Event struct {
-	Repo    string    `json:"repo"`
+	Topic   string    `json:"topic"`
 	Sender  string    `json:"sender"`
 	Kind    string    `json:"kind"`
 	Issue   int       `json:"issue,omitzero"`
 	To      string    `json:"to,omitempty"`
+	Re      uint64    `json:"re,omitzero"`
 	Summary string    `json:"summary"`
 	URL     string    `json:"url,omitempty"`
 	Time    time.Time `json:"time,omitzero"`
@@ -47,13 +52,16 @@ func ValidToken(s string) bool { return token.MatchString(s) }
 
 // Validate checks the fields a publisher sets.
 func (e Event) Validate() error {
-	for name, v := range map[string]string{"repo": e.Repo, "sender": e.Sender, "kind": e.Kind} {
+	for name, v := range map[string]string{"topic": e.Topic, "sender": e.Sender, "kind": e.Kind} {
 		if !ValidToken(v) {
 			return fmt.Errorf("%s %q must match %s", name, v, token)
 		}
 	}
 	if !slices.Contains(Kinds, e.Kind) && e.Kind != KindOnline {
 		return fmt.Errorf("kind %q must be one of %s", e.Kind, strings.Join(Kinds, ", "))
+	}
+	if (e.Kind == KindReply) != (e.Re != 0) {
+		return fmt.Errorf("re is the seq of the ask a reply answers: set it on a reply and only there")
 	}
 	if e.To != "" && !ValidToken(e.To) {
 		return fmt.Errorf("to %q must match %s", e.To, token)
@@ -69,25 +77,25 @@ func (e Event) Validate() error {
 
 // Subject is where the event is published.
 func (e Event) Subject() string {
-	return strings.Join([]string{SubjectPrefix, e.Repo, e.Sender, e.Kind}, ".")
+	return strings.Join([]string{SubjectPrefix, e.Topic, e.Sender, e.Kind}, ".")
 }
 
-// RepoFilter is the subject filter that matches every event of one repo.
-func RepoFilter(repo string) string { return SubjectPrefix + "." + repo + ".>" }
+// TopicFilter is the subject filter that matches every event of one topic.
+func TopicFilter(topic string) string { return SubjectPrefix + "." + topic + ".>" }
 
-// Decode reads an event received on subject. Repo, sender and kind come from
+// Decode reads an event received on subject. Topic, sender and kind come from
 // the subject, never from the payload: the server enforces the sender token
 // with per-user publish permissions, so the payload cannot claim another one.
 func Decode(subject string, data []byte) (Event, error) {
 	parts := strings.Split(subject, ".")
 	if len(parts) != 4 || parts[0] != SubjectPrefix {
-		return Event{}, fmt.Errorf("subject %q is not %s.<repo>.<sender>.<kind>", subject, SubjectPrefix)
+		return Event{}, fmt.Errorf("subject %q is not %s.<topic>.<sender>.<kind>", subject, SubjectPrefix)
 	}
 	var e Event
 	if err := json.Unmarshal(data, &e); err != nil {
 		return Event{}, fmt.Errorf("payload on %s: %w", subject, err)
 	}
-	e.Repo, e.Sender, e.Kind = parts[1], parts[2], parts[3]
+	e.Topic, e.Sender, e.Kind = parts[1], parts[2], parts[3]
 	if len(e.Summary) > MaxSummary {
 		e.Summary = e.Summary[:MaxSummary]
 	}
@@ -98,18 +106,22 @@ func Decode(subject string, data []byte) (Event, error) {
 // channel notification. seq is the stream sequence the agent passes to ack.
 func (e Event) Notification(seq uint64) (string, map[string]string) {
 	to := cmp.Or(e.To, "everyone")
-	ref := e.Repo
+	ref := e.Topic
 	if e.Issue != 0 {
 		ref += "#" + strconv.Itoa(e.Issue)
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "%s -> %s: %s on %s\n", e.Sender, to, e.Kind, ref)
+	fmt.Fprintf(&b, "%s -> %s: %s on %s", e.Sender, to, e.Kind, ref)
+	if e.Re != 0 {
+		fmt.Fprintf(&b, " re seq %d", e.Re)
+	}
+	b.WriteString("\n")
 	b.WriteString(escape(e.Summary))
 	if e.URL != "" {
 		b.WriteString("\n" + escape(e.URL))
 	}
 	meta := map[string]string{
-		"repo":   e.Repo,
+		"topic":  e.Topic,
 		"sender": e.Sender,
 		"kind":   e.Kind,
 		"to":     to,
@@ -117,6 +129,9 @@ func (e Event) Notification(seq uint64) (string, map[string]string) {
 	}
 	if e.Issue != 0 {
 		meta["issue"] = strconv.Itoa(e.Issue)
+	}
+	if e.Re != 0 {
+		meta["re"] = strconv.FormatUint(e.Re, 10)
 	}
 	return b.String(), meta
 }

@@ -1,14 +1,14 @@
 {
   "name": "agent-courier",
   "version": "0.3.0",
-  "description": "Issue events between the orchestrators of different people over NATS JetStream",
+  "description": "Messages between the Claude Code agents of different people over NATS JetStream",
   "author": {
     "name": "Gabriele Turelli"
   },
   "homepage": "https://github.com/CappyT/agent-courier",
   "repository": "https://github.com/CappyT/agent-courier",
   "license": "Apache-2.0",
-  "keywords": ["channel", "handoff", "nats", "jetstream", "issues", "orchestration"],
+  "keywords": ["channel", "messaging", "handoff", "nats", "jetstream", "issues", "collaboration"],
   "defaultEnabled": false,
   "userConfig": {
     "login": {
@@ -22,6 +22,11 @@
       "title": "NATS URL",
       "description": "NATS server URL, for example wss://nats.example.com",
       "required": true
+    },
+    "topics": {
+      "type": "string",
+      "title": "Topics",
+      "description": "Topics to follow, separated by commas. Leave empty to follow the repository of the session"
     }
   },
   "mcpServers": {
@@ -29,7 +34,8 @@
       "command": "agent-courier",
       "env": {
         "COURIER_NATS_URL": "${user_config.natsUrl}",
-        "COURIER_LOGIN": "${user_config.login}"
+        "COURIER_LOGIN": "${user_config.login}",
+        "COURIER_TOPICS": "${user_config.topics}"
       }
     }
   },

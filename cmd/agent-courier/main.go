@@ -1,9 +1,10 @@
 // Command agent-courier is a Claude Code channel: an MCP server over stdio
-// that pushes handoff events from NATS into the session and publishes the
-// session's own events.
+// that pushes messages from other people's agents into the session and
+// publishes the session's own.
 package main
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"log/slog"
@@ -51,8 +52,10 @@ func configFromEnv() (courier.Config, error) {
 		Login:    os.Getenv("COURIER_LOGIN"),
 		AckWait:  30 * time.Minute,
 	}
-	for r := range strings.FieldsFuncSeq(os.Getenv("COURIER_REPOS"), func(c rune) bool { return c == ',' || c == ' ' }) {
-		cfg.Repos = append(cfg.Repos, r)
+	// COURIER_REPOS is the name before topics replaced repos.
+	topics := cmp.Or(os.Getenv("COURIER_TOPICS"), os.Getenv("COURIER_REPOS"))
+	for t := range strings.FieldsFuncSeq(topics, func(c rune) bool { return c == ',' || c == ' ' }) {
+		cfg.Topics = append(cfg.Topics, t)
 	}
 	if v := os.Getenv("COURIER_ACK_WAIT"); v != "" {
 		d, err := time.ParseDuration(v)
@@ -84,7 +87,7 @@ func configFromEnv() (courier.Config, error) {
 		cfg.NkeyFile = filepath.Join(home, rest)
 	}
 
-	if len(cfg.Repos) == 0 {
+	if len(cfg.Topics) == 0 {
 		// Claude Code starts an MCP server in the project directory.
 		dir, err := os.Getwd()
 		if err != nil {
@@ -92,9 +95,9 @@ func configFromEnv() (courier.Config, error) {
 		}
 		repo := detectRepo(dir)
 		if !courier.ValidToken(repo) {
-			return cfg, fmt.Errorf("repo %q detected in %s is not a valid name: set COURIER_REPOS", repo, dir)
+			return cfg, fmt.Errorf("repo %q detected in %s is not a valid topic: set COURIER_TOPICS", repo, dir)
 		}
-		cfg.Repos = []string{repo}
+		cfg.Topics = []string{repo}
 	}
 	return cfg, nil
 }

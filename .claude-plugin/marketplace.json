@@ -1,6 +1,6 @@
 {
   "name": "agent-courier",
-  "description": "agent-courier, a Claude Code channel for issue handoffs over NATS JetStream",
+  "description": "agent-courier, a Claude Code channel for messages between the agents of different people",
   "owner": {
     "name": "CappyT"
   },
@@ -8,7 +8,7 @@
     {
       "name": "agent-courier",
       "source": "./",
-      "description": "Issue events between the orchestrators of different people over NATS JetStream"
+      "description": "Messages between the Claude Code agents of different people over NATS JetStream"
     }
   ]
 }
