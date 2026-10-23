@@ -11,6 +11,7 @@ func TestTopicFromURL(t *testing.T) {
 		"https://gitlab.com/group/sub/api":              "sub_api",
 		"git@host:kube.git":                             "kube",
 		"/srv/git/kube.git":                             "git_kube",
+		"https://github.com/acme/my.repo.git":           "acme_my-repo",
 	} {
 		if got := topicFromURL(url); got != want {
 			t.Errorf("topicFromURL(%q) = %q, want %q", url, got, want)

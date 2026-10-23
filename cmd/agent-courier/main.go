@@ -117,7 +117,7 @@ func detectTopic(dir string) string {
 	if out, err := exec.Command("git", "-C", dir, "rev-parse", "--show-toplevel").Output(); err == nil {
 		dir = strings.TrimSpace(string(out))
 	}
-	return strings.ToLower(filepath.Base(dir))
+	return tokenize(filepath.Base(dir))
 }
 
 // topicFromURL takes owner_repo from an https, ssh or scp-style remote URL
@@ -127,14 +127,25 @@ func topicFromURL(url string) string {
 	url = strings.TrimSuffix(strings.TrimRight(strings.TrimSpace(url), "/"), ".git")
 	rest, name := split(url)
 	if rest == "" {
-		return strings.ToLower(name)
+		return tokenize(name)
 	}
 	// The segment before the name is the owner, unless it is the host: the
 	// first segment of an scp URL, or the one after the "//" of a scheme.
 	if before, owner := split(rest); before != "" && !strings.HasSuffix(before, "/") {
 		name = owner + "_" + name
 	}
-	return strings.ToLower(name)
+	return tokenize(name)
+}
+
+// tokenize lowers s and replaces each character that a subject token
+// cannot hold, such as the "." of a repository name, with "-".
+func tokenize(s string) string {
+	return strings.Map(func(r rune) rune {
+		if r < 128 && courier.ValidToken(string(r)) {
+			return r
+		}
+		return '-'
+	}, strings.ToLower(s))
 }
 
 // split cuts s at its last "/" or ":".
