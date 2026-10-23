@@ -16,8 +16,8 @@
     "natsUrl": {
       "type": "string",
       "title": "NATS URL",
-      "description": "NATS server URL",
-      "default": "wss://nats.example.com"
+      "description": "NATS server URL, for example wss://nats.example.com",
+      "required": true
     }
   },
   "mcpServers": {

@@ -57,7 +57,7 @@ The plugin has two options. Claude Code asks for them when the plugin is turned 
 ```
 
 - `login` is the login the admin registered. The server reads the seed from `~/.config/nats/agent-courier/<login>.nk`.
-- `natsUrl` is the NATS URL. The default is `wss://nats.example.com`.
+- `natsUrl` is the NATS URL the admin gave.
 
 The plugin is off by default. Turn it on in each repo the orchestrator works in:
 
