@@ -13,6 +13,8 @@ import (
 	"strings"
 	"time"
 	"unicode"
+
+	"golang.org/x/text/unicode/norm"
 )
 
 // SubjectPrefix is the first token of every event subject:
@@ -78,6 +80,9 @@ func (e Event) Validate() error {
 		if len(e.URL) > MaxURL {
 			return fmt.Errorf("url is %d bytes, the limit is %d", len(e.URL), MaxURL)
 		}
+		if strings.ContainsFunc(e.URL, func(r rune) bool { return r <= ' ' || r > '~' }) {
+			return fmt.Errorf("url must be printable ASCII without spaces")
+		}
 		if u, err := url.Parse(e.URL); err != nil || u.Scheme != "https" || u.Host == "" {
 			return fmt.Errorf("url %q must be an https link", e.URL)
 		}
@@ -138,7 +143,7 @@ func (e Event) Notification(seq uint64) (string, map[string]string) {
 		b.WriteString("\n| " + escape(strings.TrimRight(line, "\n")))
 	}
 	if e.URL != "" {
-		b.WriteString("\n" + escape(clean(e.URL)))
+		b.WriteString("\n| " + escape(e.URL))
 	}
 	meta := map[string]string{
 		"topic":  e.Topic,
@@ -164,17 +169,19 @@ func escape(s string) string {
 
 // clean drops control and format characters, such as bidi overrides and
 // zero-width spaces, which can hide text from the user who reads the
-// session. It keeps newlines and turns tabs into spaces.
+// session. It keeps newlines, turns Unicode line and paragraph separators
+// into newlines, and tabs into spaces. NFKC first folds look-alikes such as
+// the fullwidth "＜" into the ASCII characters that escape replaces.
 func clean(s string) string {
 	return strings.Map(func(r rune) rune {
 		switch {
-		case r == '\n':
-			return r
+		case r == '\n', unicode.In(r, unicode.Zl, unicode.Zp):
+			return '\n'
 		case r == '\t':
 			return ' '
 		case unicode.IsControl(r), unicode.Is(unicode.Cf, r), r == unicode.ReplacementChar:
 			return -1
 		}
 		return r
-	}, s)
+	}, norm.NFKC.String(s))
 }

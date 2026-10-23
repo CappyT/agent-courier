@@ -32,6 +32,10 @@ const (
 	BudgetWindow = 10 * time.Minute
 )
 
+// maxTracked is the number of budget and online entries above which admit
+// drops the expired ones.
+const maxTracked = 1024
+
 // OnlineEvery is the shortest gap between two online events from the same
 // sender on the same topic that reach the session.
 const OnlineEvery = time.Hour
@@ -55,6 +59,22 @@ type Delivery struct {
 	// OverBudget marks the first event of a sender over Budget in the
 	// current window. The session gets a notice instead of the event.
 	OverBudget bool
+	// Direct marks a handoff, ask or reply to this login. Direct events have
+	// their own budget, so a sender's notes cannot bury them.
+	Direct bool
+	// ForeignRe marks a reply to an ask that this process did not send.
+	ForeignRe bool
+}
+
+// Notification renders the delivery as the content and meta of a Claude
+// Code channel notification.
+func (d Delivery) Notification() (string, map[string]string) {
+	content, meta := d.Event.Notification(d.Seq)
+	if d.ForeignRe {
+		content += fmt.Sprintf("\nThis session did not send ask %d.", d.Event.Re)
+		meta["re_own"] = "no"
+	}
+	return content, meta
 }
 
 // Bus publishes events and delivers the events of the followed topics.
@@ -70,6 +90,7 @@ type Bus struct {
 	pending map[uint64]pendingMsg
 	budgets map[string]*budget
 	online  map[string]time.Time
+	asked   map[uint64]bool
 }
 
 type budget struct {
@@ -135,6 +156,7 @@ func Connect(ctx context.Context, cfg Config, opts ...nats.Option) (*Bus, error)
 		pending:    map[uint64]pendingMsg{},
 		budgets:    map[string]*budget{},
 		online:     map[string]time.Time{},
+		asked:      map[uint64]bool{},
 	}, nil
 }
 
@@ -180,6 +202,11 @@ func (b *Bus) Publish(ctx context.Context, e Event) (uint64, error) {
 	ack, err := b.js.Publish(ctx, e.Subject(), data)
 	if err != nil {
 		return 0, fmt.Errorf("publish %s: %w", e.Subject(), err)
+	}
+	if e.Kind == "ask" {
+		b.mu.Lock()
+		b.asked[ack.Sequence] = true
+		b.mu.Unlock()
 	}
 	return ack.Sequence, nil
 }
@@ -261,15 +288,22 @@ func (b *Bus) admit(msg jetstream.Msg, d Delivery) (Delivery, bool) {
 		}
 		b.online[key] = now
 	}
+	d.Direct = d.Event.To == b.cfg.Login && slices.Contains([]string{"handoff", "ask", KindReply}, d.Event.Kind)
+	d.ForeignRe = d.Event.Kind == KindReply && !b.asked[d.Event.Re]
 	_, seen := b.pending[d.Seq]
 	b.pending[d.Seq] = pendingMsg{msg: msg, delivery: d}
 	if seen {
 		return d, false
 	}
-	bg := b.budgets[d.Event.Sender]
+	b.prune(now)
+	key := d.Event.Sender
+	if d.Direct {
+		key += "/direct"
+	}
+	bg := b.budgets[key]
 	if bg == nil || now.Sub(bg.start) >= BudgetWindow {
 		bg = &budget{start: now}
-		b.budgets[d.Event.Sender] = bg
+		b.budgets[key] = bg
 	}
 	bg.pushed++
 	switch {
@@ -280,6 +314,17 @@ func (b *Bus) admit(msg jetstream.Msg, d Delivery) (Delivery, bool) {
 		return d, true
 	}
 	return d, false
+}
+
+// prune drops expired entries, so many senders cannot grow the maps
+// without limit.
+func (b *Bus) prune(now time.Time) {
+	if len(b.budgets) > maxTracked {
+		maps.DeleteFunc(b.budgets, func(_ string, bg *budget) bool { return now.Sub(bg.start) >= BudgetWindow })
+	}
+	if len(b.online) > maxTracked {
+		maps.DeleteFunc(b.online, func(_ string, t time.Time) bool { return now.Sub(t) >= OnlineEvery })
+	}
 }
 
 // Ack confirms that the agent handled the event with stream sequence seq.
