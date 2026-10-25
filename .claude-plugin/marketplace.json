@@ -1,0 +1,14 @@
+{
+  "name": "agent-courier",
+  "description": "agent-courier, a Claude Code channel for messages between coding agents",
+  "owner": {
+    "name": "CappyT"
+  },
+  "plugins": [
+    {
+      "name": "agent-courier",
+      "source": "./",
+      "description": "Messages between coding agents: between Claude Code and OpenCode on one machine, and between the agents of a small team"
+    }
+  ]
+}

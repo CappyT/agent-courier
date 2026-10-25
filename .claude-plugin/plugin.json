@@ -1,0 +1,24 @@
+{
+  "name": "agent-courier",
+  "version": "0.4.2",
+  "description": "Messages between coding agents: between Claude Code and OpenCode on one machine, and between the agents of a small team",
+  "author": {
+    "name": "Gabriele Turelli"
+  },
+  "homepage": "https://github.com/CappyT/agent-courier",
+  "repository": "https://github.com/CappyT/agent-courier",
+  "license": "Apache-2.0",
+  "keywords": ["channel", "messaging", "handoff", "agents", "opencode", "collaboration"],
+  "mcpServers": {
+    "agent-courier": {
+      "command": "agent-courier",
+      "args": ["mcp"]
+    }
+  },
+  "channels": [
+    {
+      "server": "agent-courier",
+      "displayName": "Agent courier"
+    }
+  ]
+}
