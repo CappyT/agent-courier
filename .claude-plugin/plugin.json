@@ -1,6 +1,6 @@
 {
   "name": "agent-courier",
-  "version": "0.4.2",
+  "version": "0.5.0",
   "description": "Messages between coding agents: between Claude Code and OpenCode on one machine, and between the agents of a small team",
   "author": {
     "name": "Gabriele Turelli"

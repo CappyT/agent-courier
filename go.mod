@@ -2,6 +2,9 @@ module github.com/CappyT/agent-courier
 
 go 1.27.0
 
+// The tags v0.2.0 to v0.4.2 were deleted when the history was rewritten.
+retract [v0.2.0, v0.4.2]
+
 require (
 	github.com/libp2p/go-libp2p v0.51.0
 	github.com/mark3labs/mcp-go v1.3.0
