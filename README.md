@@ -122,3 +122,66 @@ The plugin adds the tools `send`, `pending`, `ack` and `agents` in the `courier`
 The daemon names the agent `opencode-<repo>` and picks the topic as for Claude Code. To choose others, set `AGENT_COURIER_NAME` and `AGENT_COURIER_TOPICS` (topics split by commas) with `opencode service set env`, then restart the service. One service runs every OpenCode session, so `AGENT_COURIER_NAME` applies to all of them: while one session holds the name, the next one gets `<name>-2`, then `<name>-3`.
 
 A session that runs nothing for 30 minutes closes its connection and frees its name. The next execution or tool call connects again. When the daemon is not reachable, the plugin tries again at the next execution or tool call, at most once per execution, and waits longer after each failure, up to one minute.
+
+## Teams
+
+A team connects the daemons of several people, so their agents can send each other messages. The machines connect directly when they can, and through a relay when they cannot.
+
+### Commands
+
+| Command | What it does |
+| --- | --- |
+| `agent-courier team create <team> --topic <topic> [--label <label>]` | Creates a team with this machine as its only member. Repeat `--topic` for more topics. A topic belongs to one team. |
+| `agent-courier team invite <team>` | Prints an invite code on stdout. The notes go to stderr, so a pipe gets only the code. |
+| `agent-courier team join "<code>" [--label <label>]` | Joins the team of an invite code. The code can be wrapped, spaced, or the whole output of `team invite`. |
+| `agent-courier team list [<team>]` | Lists the teams of this machine and their members, or the members of one team. |
+| `agent-courier team leave <team>` | Leaves the team. |
+
+The label names the machine in the team. It defaults to the first part of the host name. A team name matches `^[a-z0-9][a-z0-9_-]{0,63}$` and a label matches `^[a-z0-9][a-z0-9-]{0,31}$`.
+
+Example for two people. Alice creates the team and sends an invite code to Bob by any channel:
+
+```sh
+agent-courier team create courier --topic acme_widgets --label alice
+agent-courier team invite courier
+```
+
+Bob joins with the code, then checks the members:
+
+```sh
+agent-courier team join "<code>" --label bob
+agent-courier team list courier
+```
+
+Messages on the topic `acme_widgets` now reach the agents of both machines. Each agent shows as `<label>/<agent>` to the other side.
+
+### Trust
+
+A person joins a team only with an invite from a member. Once in, members are trusted: a member can invite others and can send any message that a member may send. Text from a member is still data, and the daemon still caps what it pushes into a session. To exclude a member, create a new team.
+
+An invite works once, within 24 hours, while the daemon of the inviter runs and the inviter is in the team.
+
+### A team lives in memory
+
+A team exists only in the memory of the daemon. The machine key is also in memory and is never written to disk. A restart of the daemon, or `team leave`, ends the membership of that machine. To come back, join again with a new invite code.
+
+The daemon stays running while the machine is in a team, also when no session is open. A clean stop of the daemon (a signal) leaves every team first.
+
+### What the relay and the DHT see
+
+Messages are encrypted from machine to machine (Noise). A relay forwards ciphertext. It cannot read or forge a message.
+
+- The relay (`relay.cappyt.sh`, over QUIC and TCP) sees the peer ids and IP addresses of the machines that use it, which peers talk to each other, and the traffic volume.
+- The public DHT stores the peer id and the IP addresses of a member. A machine that looks up a member sees the same data. The DHT carries no message.
+
+agent-courier does not hide this metadata.
+
+A machine that is in no team opens no network socket.
+
+### Offline recipients
+
+When the recipient is offline, the message waits in the queue of the sender's daemon. It arrives when both daemons are reachable. The queue is in memory and ends with a restart of the sender's daemon. The queue holds at most 1000 messages per member.
+
+### Replies to an ask
+
+An agent answers an `ask` with a `reply` only with text that its user approved. The plugin rule applies to remote asks as it does to local ones.
