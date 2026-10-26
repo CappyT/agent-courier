@@ -2,4 +2,4 @@
 package version
 
 // Version must equal "version" in .claude-plugin/plugin.json and opencode/package.json.
-const Version = "0.5.0"
+const Version = "0.5.1"
