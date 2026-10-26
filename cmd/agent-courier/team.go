@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/CappyT/agent-courier/internal/client"
+	"github.com/CappyT/agent-courier/internal/p2p"
 	"github.com/CappyT/agent-courier/internal/team"
 )
 
@@ -31,10 +32,11 @@ commands:
   invite <team>
           print an invite code for another machine; it works once,
           within 24 hours, while this machine's daemon runs and is
-          in the team
+          in the team; stdout gets only the code, stderr the notes
   join <code> [--label <label>]
           join the team of an invite code from a member; the label
           defaults to the host name
+          <code> may be wrapped, spaced, or the whole invite output
 
 A team lives only in the memory of this machine's daemon: the daemon
 runs while the machine is in a team, and forgets its teams when it
@@ -143,7 +145,12 @@ func runTeam(args []string, stdout, stderr io.Writer) int {
 	case "invite":
 		method, params = "team.invite", map[string]any{"team": pos[0]}
 	case "join":
-		method, params, timeout = "team.join", map[string]any{"code": pos[0], "label": label}, joinTimeout
+		code, err := p2p.FindInviteCode(pos[0])
+		if err != nil {
+			fmt.Fprintf(stderr, "agent-courier: %v\n", err)
+			return 1
+		}
+		method, params, timeout = "team.join", map[string]any{"code": code, "label": label}, joinTimeout
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
@@ -163,8 +170,10 @@ func runTeam(args []string, stdout, stderr io.Writer) int {
 	}
 	switch {
 	case res.Invite != nil:
-		fmt.Fprintf(stdout, "Invite code for team %s. It works once, until %s, while this machine's daemon runs:\n%s\nOn the new machine, run agent-courier team join with this code.\n",
-			res.Invite.Team, res.Invite.Expires, res.Invite.Code)
+		// Only the code goes to stdout, so a pipe gets it alone.
+		fmt.Fprintf(stderr, "Invite code for team %s. It works once, until %s, while this machine's daemon runs:\n", res.Invite.Team, res.Invite.Expires)
+		fmt.Fprintln(stdout, res.Invite.Code)
+		fmt.Fprintln(stderr, "On the new machine, run agent-courier team join with this code.")
 	case res.Text != "":
 		fmt.Fprintln(stdout, res.Text)
 	case res.Team != nil:

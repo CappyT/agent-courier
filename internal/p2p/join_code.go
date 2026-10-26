@@ -130,6 +130,49 @@ func dialableAddrs(addrs []ma.Multiaddr, allowLoopback bool) []ma.Multiaddr {
 // that Dialable refuses: /unix, loopback, link-local and unspecified.
 func DecodeInvite(code string) (Invite, error) { return decodeInvite(code, false) }
 
+// maxInviteText is the most bytes of text that FindInviteCode reads, and
+// maxInviteWords the most words: they bound the runs of words it decodes.
+const (
+	maxInviteText  = 4 * MaxInviteCode
+	maxInviteWords = 256
+)
+
+// FindInviteCode finds the one invite code in text: a code alone, a code that
+// a terminal or a chat app broke with spaces or line breaks, or the whole text
+// that agent-courier team invite printed. A code is a run of words that
+// DecodeInvite accepts once they are joined. FindInviteCode returns it joined
+// and in lower case. Text with no such run, or with more than one, is
+// ErrBadInviteCode.
+func FindInviteCode(text string) (string, error) {
+	words := strings.Fields(strings.ToLower(text))
+	if len(text) > maxInviteText || len(words) > maxInviteWords {
+		return "", ErrBadInviteCode
+	}
+	var found string
+	n := 0
+	for i := range words {
+		var code strings.Builder
+		for _, w := range words[i:] {
+			if strings.ContainsFunc(w, notInviteChar) || code.Len()+len(w) > MaxInviteCode {
+				break
+			}
+			code.WriteString(w)
+			if _, err := DecodeInvite(code.String()); err == nil {
+				found = code.String()
+				n++
+			}
+		}
+	}
+	if n != 1 {
+		return "", ErrBadInviteCode
+	}
+	return found, nil
+}
+
+// notInviteChar reports whether r is outside the lower case alphabet of
+// inviteEncoding.
+func notInviteChar(r rune) bool { return (r < 'a' || r > 'z') && (r < '2' || r > '7') }
+
 func decodeInvite(code string, allowLoopback bool) (Invite, error) {
 	code = strings.ToLower(strings.TrimSpace(code))
 	if code == "" || len(code) > MaxInviteCode {

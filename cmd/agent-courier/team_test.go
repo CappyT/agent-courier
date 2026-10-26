@@ -17,6 +17,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/libp2p/go-libp2p/core/crypto"
+	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
+	ma "github.com/multiformats/go-multiaddr"
+
 	"github.com/CappyT/agent-courier/internal/daemon"
 	"github.com/CappyT/agent-courier/internal/p2p"
 	"github.com/CappyT/agent-courier/internal/store"
@@ -27,21 +31,26 @@ const cliSelf = "12D3KooWcli"
 
 // cliNet is the p2p side of the daemon in the CLI tests.
 type cliNet struct {
-	mu      sync.Mutex
-	label   string
-	joinErr error
+	mu       sync.Mutex
+	invite   string
+	label    string
+	joinCode string
+	joinErr  error
+	joins    int
 }
 
 func (n *cliNet) Self() (string, error) { return cliSelf, nil }
 
 func (n *cliNet) InviteCode(name string, secret []byte, expires time.Time) (string, error) {
-	return "abcdefgh234567", nil
+	return n.invite, nil
 }
 
 func (n *cliNet) Join(_ context.Context, code, label string) (team.Team, error) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	n.label = label
+	n.joinCode = code
+	n.joins++
 	if n.joinErr != nil {
 		return team.Team{}, n.joinErr
 	}
@@ -54,6 +63,31 @@ func (n *cliNet) Join(_ context.Context, code, label string) (team.Team, error) 
 func (n *cliNet) TeamChanged(string) {}
 
 func (n *cliNet) Left(team.Team) {}
+
+func (n *cliNet) lastJoin() (code string, joins int) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	return n.joinCode, n.joins
+}
+
+// testInviteCode is a valid invite code for team with a new inviter.
+func testInviteCode(t *testing.T, name string) string {
+	t.Helper()
+	_, pub, err := crypto.GenerateEd25519Key(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, err := libp2ppeer.IDFromPublicKey(pub)
+	if err != nil {
+		t.Fatal(err)
+	}
+	code, err := p2p.Invite{Team: name, Inviter: id, Addrs: []ma.Multiaddr{ma.StringCast("/ip4/192.0.2.7/tcp/4001")},
+		Secret: make([]byte, team.SecretSize), Expires: time.Now().Add(time.Hour)}.Encode()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return code
+}
 
 func (n *cliNet) lastLabel() string {
 	n.mu.Lock()
@@ -153,18 +187,29 @@ func TestTeamCLI(t *testing.T) {
 }
 
 func TestTeamCLIInviteAndJoin(t *testing.T) {
-	net := &cliNet{}
+	code := testInviteCode(t, "courier")
+	net := &cliNet{invite: code}
 	startTeamTestDaemon(t, net)
 	runCLI(t, 0, "team", "create", "courier", "--topic", "t", "--label", "alpha")
 
-	out := runCLI(t, 0, "team", "invite", "courier")
-	wantIn(t, out, "Invite code for team courier", "It works once, until 20", "\nabcdefgh234567\n", "agent-courier team join")
+	// stdout carries only the code, so a pipe gets it alone.
+	var stdout, stderr bytes.Buffer
+	if c := run([]string{"team", "invite", "courier"}, &stdout, &stderr); c != 0 {
+		t.Fatalf("team invite = %d; stderr %q", c, stderr.String())
+	}
+	if stdout.String() != code+"\n" {
+		t.Errorf("team invite stdout = %q, want only the code and a newline", stdout.String())
+	}
+	wantIn(t, stderr.String(), "Invite code for team courier", "It works once, until 20", "agent-courier team join")
+	if strings.Contains(stderr.String(), code) {
+		t.Errorf("team invite stderr carries the code: %q", stderr.String())
+	}
 	wantIn(t, runCLI(t, 1, "team", "invite", "nope"), "no team with this name")
 
-	wantIn(t, runCLI(t, 0, "team", "join", "abcdefgh234567", "--label", "bravo"), "courier", "bravo  "+cliSelf, "alpha  12D3KooWinviter")
+	wantIn(t, runCLI(t, 0, "team", "join", code, "--label", "bravo"), "courier", "bravo  "+cliSelf, "alpha  12D3KooWinviter")
 	defer func(f func() (string, error)) { hostname = f }(hostname)
 	hostname = func() (string, error) { return "Laptop.local", nil }
-	runCLI(t, 0, "team", "join", "abcdefgh234567")
+	runCLI(t, 0, "team", "join", code)
 	if got := net.lastLabel(); got != "laptop" {
 		t.Fatalf("join without --label sent label %q, want the host name", got)
 	}
@@ -172,10 +217,85 @@ func TestTeamCLIInviteAndJoin(t *testing.T) {
 	net.mu.Lock()
 	net.joinErr = p2p.ErrInviterUnreachable
 	net.mu.Unlock()
-	got := runCLI(t, 1, "team", "join", "abcdefgh234567", "--label", "bravo")
+	got := runCLI(t, 1, "team", "join", code, "--label", "bravo")
 	wantIn(t, got, "not reachable", "stays valid")
-	if strings.Contains(got, "abcdefgh234567") {
+	if strings.Contains(got, code) {
 		t.Fatalf("the error quotes the code: %q", got)
+	}
+}
+
+// team join finds the one invite code in what a person pastes, and sends the
+// daemon only that code.
+func TestTeamCLIJoinFindsCode(t *testing.T) {
+	code := testInviteCode(t, "courier")
+	net := &cliNet{invite: code}
+	startTeamTestDaemon(t, net)
+	runCLI(t, 0, "team", "create", "courier", "--topic", "t", "--label", "alpha")
+
+	// What a terminal shows of team invite: stderr and stdout in order.
+	var shown bytes.Buffer
+	if c := run([]string{"team", "invite", "courier"}, &shown, &shown); c != 0 {
+		t.Fatalf("team invite = %d: %q", c, shown.String())
+	}
+	full := shown.String()
+	wrap := func(s string, width int, sep string) string {
+		var b strings.Builder
+		for len(s) > width {
+			b.WriteString(s[:width] + sep)
+			s = s[width:]
+		}
+		return b.String() + s
+	}
+	other := testInviteCode(t, "courier")
+
+	for _, tc := range []struct {
+		name string
+		text string
+	}{
+		{"alone", code},
+		{"surrounding white space", "\n\t  " + code + "  \r\n"},
+		{"upper case", strings.ToUpper(code)},
+		{"line breaks inside", wrap(code, 40, "\n")},
+		{"spaces inside", wrap(code, 7, " ")},
+		{"chat wrap", wrap(code, 33, " \r\n  ")},
+		{"full invite output", full},
+		{"full invite output, wrapped code", strings.Replace(full, code, wrap(code, 50, "\n"), 1)},
+		{"full invite output with surrounding text", "here it is:\n\n" + full + "\nthanks"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			wantIn(t, runCLI(t, 0, "team", "join", tc.text, "--label", "bravo"), "bravo  "+cliSelf)
+			if got, _ := net.lastJoin(); got != code {
+				t.Errorf("the daemon got code %q, want %q", got, code)
+			}
+		})
+	}
+
+	for _, tc := range []struct {
+		name string
+		text string
+	}{
+		{"empty", ""},
+		{"white space", " \n\t "},
+		{"no code", "abcdefgh234567"},
+		{"header and footer only", strings.Replace(full, code, "", 1)},
+		{"broken code", code[:len(code)-8]},
+		{"code with a foreign character", code[:20] + "-" + code[20:]},
+		{"two codes", code + "\n" + other},
+		{"the same code twice", full + full},
+		{"text over the limit", code + strings.Repeat(" ", 4*p2p.MaxInviteCode)},
+		{"too many words", code + strings.Repeat(" a", 300)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, before := net.lastJoin()
+			got := runCLI(t, 1, "team", "join", tc.text, "--label", "bravo")
+			wantIn(t, got, p2p.ErrBadInviteCode.Error())
+			if strings.Contains(got, code) || strings.Contains(got, other) {
+				t.Errorf("the error quotes the code: %q", got)
+			}
+			if _, after := net.lastJoin(); after != before {
+				t.Errorf("a bad code reached the daemon")
+			}
+		})
 	}
 }
 
