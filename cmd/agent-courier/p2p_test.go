@@ -110,6 +110,18 @@ func waitInet(t *testing.T, what string, cond func(map[string]bool) bool) {
 	}
 }
 
+// waitLog waits until logs contain line. The daemon writes some lines after
+// the effect a test can observe, such as "p2p host stopped" after the sockets
+// close.
+func waitLog(t *testing.T, logs *syncBuffer, line string) {
+	t.Helper()
+	for deadline := time.Now().Add(10 * time.Second); !strings.Contains(logs.String(), line); time.Sleep(20 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting for log line %q; logs:\n%s", line, logs.String())
+		}
+	}
+}
+
 func added(before, now map[string]bool) int {
 	n := 0
 	for ino := range now {
@@ -321,7 +333,8 @@ func TestDaemonJoinWithoutTeam(t *testing.T) {
 	}
 	wantIn(t, runCLI(t, 1, "team", "join", bad, "--label", "bravo"), "not reachable")
 	waitInet(t, "the sockets of the failed join to close", func(now map[string]bool) bool { return added(before, now) == 0 })
-	wantIn(t, logs.String(), "p2p host started", "p2p host stopped")
+	waitLog(t, logs, "p2p host stopped")
+	wantIn(t, logs.String(), "p2p host started")
 
 	wantIn(t, runCLI(t, 0, "team", "join", code, "--label", "bravo"), "courier", "alpha  ", "bravo  ")
 	time.Sleep(200 * time.Millisecond)
