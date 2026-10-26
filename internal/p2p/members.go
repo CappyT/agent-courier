@@ -230,7 +230,8 @@ func parseAddrs(addrs []string) []ma.Multiaddr {
 }
 
 // write sends frames to id on one MsgProtocol stream, dialing addrs when it
-// must, and waits until id closes the stream.
+// must, and waits until id closes the stream. The stream may cross a relayed
+// connection.
 func (r *MemberSync) write(ctx context.Context, id peer.ID, addrs []ma.Multiaddr, frames []MembersFrame) error {
 	if len(frames) == 0 {
 		return nil
@@ -238,7 +239,7 @@ func (r *MemberSync) write(ctx context.Context, id peer.ID, addrs []ma.Multiaddr
 	if len(addrs) > 0 {
 		r.h.Peerstore().AddAddrs(id, addrs, peerstore.TempAddrTTL)
 	}
-	s, err := r.h.NewStream(ctx, id, MsgProtocol)
+	s, err := r.h.NewStream(network.WithAllowLimitedConn(ctx, "agent-courier"), id, MsgProtocol)
 	if err != nil {
 		return err
 	}

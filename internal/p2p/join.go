@@ -452,9 +452,11 @@ func (j *JoinService) Join(ctx context.Context, code, label string) (team.Team, 
 }
 
 // dial connects to the inviter, whose peer id Noise checks, and opens a join
-// stream. It dials only the addresses that joinDialable keeps.
+// stream. It dials only the addresses that joinDialable keeps. The stream may
+// cross a relayed connection: the inviter can be reachable only through its
+// circuit.
 func (j *JoinService) dial(ctx context.Context, inv Invite) (network.Stream, error) {
-	ctx, cancel := context.WithTimeout(ctx, j.dialTimeout)
+	ctx, cancel := context.WithTimeout(network.WithAllowLimitedConn(ctx, "agent-courier"), j.dialTimeout)
 	defer cancel()
 	if err := j.h.Connect(ctx, peer.AddrInfo{ID: inv.Inviter, Addrs: dialableAddrs(inv.Addrs, j.allowLoopback)}); err != nil {
 		return nil, err
