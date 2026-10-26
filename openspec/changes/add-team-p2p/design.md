@@ -148,7 +148,7 @@ A result lists at most 64 members of a team, and `team.list` without a team at m
 | --- | --- | --- |
 | `team.create` | `team`, required. `topics`, 1 to 16 topics, required. `label`, required. | `{"team": <team>}`, with this machine as the only member. |
 | `team.list` | `team`, optional. | `{"teams": [<team>...]}`, sorted by name; with `team`, only that team. |
-| `team.leave` | `team`, required. | `{"text": "Left team courier."}`. The daemon tells the members it can reach and forgets the team. |
+| `team.leave` | `team`, required. | `{"text": "Left team courier."}`. The daemon tells the members it can reach and forgets the team. When the leave does not reach every member, the text adds how many: `Left team courier. The leave did not reach 1 of 3 members.` |
 | `team.invite` | `team`, required. | `{"invite": {"team": <name>, "code": <code>, "expires": <RFC 3339 time, UTC>}}`. No log holds the code. |
 | `team.join` | `code`, required, at most 2048 characters. `label`, required; the CLI fills in the host name. | `{"team": <team>}` after the join, within 90 seconds. |
 

@@ -31,6 +31,11 @@ const cliSelf = "12D3KooWcli"
 
 // cliNet is the p2p side of the daemon in the CLI tests.
 type cliNet struct {
+	// set is the member set of the daemon, set by startTeamTestDaemon.
+	set *team.Set
+	// unreached is how many members each leave reports it did not reach.
+	unreached int
+
 	mu       sync.Mutex
 	invite   string
 	label    string
@@ -62,7 +67,10 @@ func (n *cliNet) Join(_ context.Context, code, label string) (team.Team, error) 
 
 func (n *cliNet) TeamChanged(string) {}
 
-func (n *cliNet) Left(team.Team) {}
+func (n *cliNet) Leave(name string) (team.Team, int, error) {
+	t, err := n.set.Leave(name)
+	return t, n.unreached, err
+}
 
 func (n *cliNet) lastJoin() (code string, joins int) {
 	n.mu.Lock()
@@ -113,6 +121,7 @@ func startTeamTestDaemon(t *testing.T, net *cliNet) *team.Set {
 	}
 	var logs syncBuffer
 	srv := daemon.New(st, slog.New(slog.NewTextHandler(&logs, nil)))
+	net.set = srv.Teams()
 	srv.SetNetwork(net)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
@@ -147,7 +156,8 @@ func wantIn(t *testing.T, got string, parts ...string) {
 }
 
 func TestTeamCLI(t *testing.T) {
-	set := startTeamTestDaemon(t, &cliNet{})
+	net := &cliNet{unreached: 2}
+	set := startTeamTestDaemon(t, net)
 
 	wantIn(t, runCLI(t, 0, "team", "list"), "belongs to no team")
 	wantIn(t, runCLI(t, 0, "team", "create", "courier", "--topic", "cappyt_agent-courier", "--label", "alpha"),
@@ -181,7 +191,8 @@ func TestTeamCLI(t *testing.T) {
 	}
 	wantIn(t, runCLI(t, 1, "team", "list", "nope"), "no team with this name")
 
-	wantIn(t, runCLI(t, 0, "team", "leave", "courier"), "Left team courier.")
+	// The leave names how many of the 12 other members it did not reach.
+	wantIn(t, runCLI(t, 0, "team", "leave", "courier"), "Left team courier. The leave did not reach 2 of 12 members.")
 	wantIn(t, runCLI(t, 0, "team", "list"), "belongs to no team")
 	wantIn(t, runCLI(t, 1, "team", "leave", "courier"), "no team with this name")
 }

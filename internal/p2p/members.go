@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"slices"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/libp2p/go-libp2p/core/host"
@@ -114,29 +115,38 @@ func (r *MemberSync) kickTeam(name string, skip peer.ID) {
 
 // SendLeft sends t, the list of a team this machine left with its own entry
 // marked left, to each other member of t, in parallel, and waits for the
-// sends. No member set holds t any more, so no other send reaches them.
-func (r *MemberSync) SendLeft(t team.Team) {
+// sends. No member set holds t any more, so no other send reaches them. It
+// returns how many of the other members it did not reach.
+func (r *MemberSync) SendLeft(t team.Team) int {
+	others := t.Members.Active()
 	frames, _, err := PackMembers(t.Name, t.Members.Entries())
 	if err != nil {
 		r.log.Error("the member list of a left team does not pack", "team", t.Name, "err", err)
-		return
+		return len(others)
 	}
 	ctx, cancel := context.WithTimeout(r.ctx, leaveTimeout)
 	defer cancel()
 	self := r.h.ID()
+	var failed atomic.Int32
 	var wg sync.WaitGroup
-	for _, e := range t.Members.Active() {
+	for _, e := range others {
 		id, err := peer.Decode(e.PeerID)
-		if err != nil || id == self {
+		if err != nil {
+			failed.Add(1)
+			continue
+		}
+		if id == self {
 			continue
 		}
 		wg.Go(func() {
 			if err := r.write(ctx, id, parseAddrs(e.Addrs), frames); err != nil {
+				failed.Add(1)
 				r.log.Debug("leave send failed", "peer", id, "err", err)
 			}
 		})
 	}
 	wg.Wait()
+	return int(failed.Load())
 }
 
 // Receive merges a members frame from the peer from. team.Set.Merge is the

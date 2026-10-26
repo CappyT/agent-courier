@@ -389,7 +389,6 @@ func (p *P2P) TeamChanged(name string) {
 // the daemon stops. The leaves run in parallel, each within the leave
 // timeout of p2p.MemberSync.SendLeft.
 func (p *P2P) LeaveAll() {
-	// The hold keeps the host up between the last Leave and the sends.
 	p.holds.Add(1)
 	defer func() {
 		p.holds.Add(-1)
@@ -397,26 +396,43 @@ func (p *P2P) LeaveAll() {
 	}()
 	var wg sync.WaitGroup
 	for _, t := range p.set.List() {
-		left, err := p.set.Leave(t.Name)
-		if err != nil {
-			continue
-		}
-		p.log.Info("team left at the stop of the daemon", "team", left.Name)
-		wg.Go(func() { p.Left(left) })
+		wg.Go(func() {
+			if left, _, err := p.leave(t.Name); err == nil {
+				p.log.Info("team left at the stop of the daemon", "team", left.Name)
+			}
+		})
 	}
 	wg.Wait()
 }
 
-// Left is the Network method that runs after this machine left team t: it
-// sends t, with the entry of this machine marked left, to the members it
-// can reach, and then lets the host stop when t was the last team.
-func (p *P2P) Left(t team.Team) {
+// Leave is the Network method of team.leave: it marks the entry of this
+// machine in team name left, forgets the team, and sends the list to the
+// members it can reach. It returns the team and how many of its other
+// members the leave did not reach. The host stops after the sends when name
+// was the last team.
+func (p *P2P) Leave(name string) (team.Team, int, error) {
 	p.holds.Add(1)
 	defer func() {
 		p.holds.Add(-1)
 		p.Changed()
 	}()
-	if n := p.current(); n != nil {
-		n.members.SendLeft(t)
+	return p.leave(name)
+}
+
+// leave is Leave for a caller that holds the host. The hold must come before
+// the team goes: a sync that sees no team and no hold stops the host, and the
+// leave would reach no member.
+func (p *P2P) leave(name string) (team.Team, int, error) {
+	t, err := p.set.Leave(name)
+	if err != nil {
+		return team.Team{}, 0, err
 	}
+	unreached := len(t.Members.Active())
+	if n := p.current(); n != nil {
+		unreached = n.members.SendLeft(t)
+	}
+	if unreached > 0 {
+		p.log.Warn("the leave did not reach every member", "team", t.Name, "unreached", unreached)
+	}
+	return t, unreached, nil
 }

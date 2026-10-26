@@ -164,7 +164,9 @@ func TestMembersLeave(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	b.ms.SendLeft(left)
+	if n := b.ms.SendLeft(left); n != 1 {
+		t.Fatalf("SendLeft did not reach %d members, want 1: C", n)
+	}
 	if b.set.Len() != 0 || b.ms.IsMember(a.h.ID()) {
 		t.Fatal("B kept the team after the leave")
 	}

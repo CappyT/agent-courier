@@ -22,10 +22,12 @@ import (
 )
 
 // startTeamMachine is startMachine with the key of the machine as the
-// server's identity and the p2p side as its network, as the daemon runs.
+// server's identity and the p2p side as its network, as the daemon runs. A
+// setup that adds no team starts the machine without a host. opts change
+// the config of the p2p side.
 // log is the log of both and must outlive the test, because the host makes
 // it the global log of libp2p; nil discards it.
-func startTeamMachine(t *testing.T, now func() time.Time, key crypto.PrivKey, log *slog.Logger, setup func(*team.Set, string)) *machine {
+func startTeamMachine(t *testing.T, now func() time.Time, key crypto.PrivKey, log *slog.Logger, setup func(*team.Set, string), opts ...func(*P2PConfig)) *machine {
 	t.Helper()
 	id, err := libp2ppeer.IDFromPrivateKey(key)
 	if err != nil {
@@ -39,19 +41,24 @@ func startTeamMachine(t *testing.T, now func() time.Time, key crypto.PrivKey, lo
 	m.testDaemon = startDaemonSrv(t, now, nil, func(srv *Server) {
 		srv.log = log
 		setup(srv.Teams(), self)
-		m.p = NewP2P(srv.store, srv.Teams(), log, P2PConfig{
+		cfg := P2PConfig{
 			Key:    func() (crypto.PrivKey, error) { return key, nil },
 			Listen: []string{"/ip4/127.0.0.1/tcp/0"},
-		})
+		}
+		for _, o := range opts {
+			o(&cfg)
+		}
+		m.p = NewP2P(srv.store, srv.Teams(), log, cfg)
 		srv.SetNetwork(m.p)
 		srv.SetPresence(m.p)
 	})
 	t.Cleanup(m.p.stop)
 	m.p.sync(t.Context())
-	if m.p.Host() == nil {
+	// A machine with no team runs no host.
+	if m.p.set.Len() > 0 && m.p.Host() == nil {
 		t.Fatal("no host")
 	}
-	m.id = m.p.Host().ID()
+	m.id = id
 	return m
 }
 

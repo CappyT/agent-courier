@@ -30,6 +30,8 @@ type fakeNet struct {
 	changed []string
 	left    []team.Team
 	joinErr error
+	// unreached is how many members each leave reports it did not reach.
+	unreached int
 }
 
 func (f *fakeNet) Self() (string, error) {
@@ -61,10 +63,15 @@ func (f *fakeNet) TeamChanged(name string) {
 	f.changed = append(f.changed, name)
 }
 
-func (f *fakeNet) Left(t team.Team) {
+func (f *fakeNet) Leave(name string) (team.Team, int, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	t, err := f.set.Leave(name)
+	if err != nil {
+		return team.Team{}, 0, err
+	}
 	f.left = append(f.left, t)
+	return t, f.unreached, nil
 }
 
 func (f *fakeNet) failJoin(err error) {
@@ -162,7 +169,7 @@ func TestTeamMethods(t *testing.T) {
 	}
 
 	r := c.call("team.leave", map[string]any{"team": "courier"})
-	if r.Error != nil || !strings.Contains(string(r.Result), "Left team courier.") {
+	if r.Error != nil || !strings.Contains(string(r.Result), "Left team courier.") || strings.Contains(string(r.Result), "did not reach") {
 		t.Fatalf("leave: %s %+v", r.Result, r.Error)
 	}
 	if got := listTeams(t, c); len(got) != 0 {

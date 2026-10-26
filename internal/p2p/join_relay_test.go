@@ -115,7 +115,10 @@ func TestJoinThroughRelay(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	b.ms.SendLeft(left)
+	// echo exists only in the member lists.
+	if n := b.ms.SendLeft(left); n != 1 {
+		t.Fatalf("SendLeft did not reach %d members, want 1: echo", n)
+	}
 	all[b.id()] = "left bravo"
 	wantMembers(t, a, all)
 	if a.ms.IsMember(b.h.ID()) {

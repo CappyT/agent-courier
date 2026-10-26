@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json/jsontext"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/CappyT/agent-courier/internal/message"
@@ -48,9 +49,11 @@ type Network interface {
 	// TeamChanged runs after a local change of team, so the host follows
 	// and the member list goes out to the members.
 	TeamChanged(team string)
-	// Left runs after this machine left t: it sends t, with this machine's
-	// entry marked left, to the members it can reach.
-	Left(t team.Team)
+	// Leave marks the entry of this machine in team name left and forgets
+	// the team, as team.Set.Leave does, then sends the list to the members
+	// it can reach. It returns the team and how many of its other members
+	// the leave did not reach.
+	Leave(name string) (team.Team, int, error)
 }
 
 // SetNetwork gives the server its p2p side. Call it before Serve. The team
@@ -181,14 +184,17 @@ func (s *Server) teamLeave(ss *session, raw jsontext.Value) (any, *rpcError) {
 	if e := s.needNetwork(ss); e != nil {
 		return nil, e
 	}
-	t, err := s.teams.Leave(p.Team)
+	t, unreached, err := s.net.Leave(p.Team)
 	if err != nil {
 		return nil, s.teamError(ss, "team leave", err)
 	}
 	s.log.Info("team left", "session", ss.id, "team", t.Name)
-	s.net.Left(t)
 	s.teamsChanged()
-	return textResult{Text: "Left team " + t.Name + "."}, nil
+	text := "Left team " + t.Name + "."
+	if unreached > 0 {
+		text += fmt.Sprintf(" The leave did not reach %d of %d members.", unreached, len(t.Members.Active()))
+	}
+	return textResult{Text: text}, nil
 }
 
 // needNetwork fails a team method on a server without its p2p side: a bug

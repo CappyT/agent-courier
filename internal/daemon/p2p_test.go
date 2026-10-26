@@ -128,7 +128,7 @@ func waitSockets(t *testing.T, what string, cond func(map[string]bool) bool) {
 // made once and lives in memory: a second team and a second host reuse it.
 func TestP2PNoTeamNoSocket(t *testing.T) {
 	before := inetSockets(t)
-	p, set, key, loads := testP2P(t)
+	p, _, key, loads := testP2P(t)
 	ctx := t.Context()
 
 	p.sync(ctx)
@@ -153,11 +153,9 @@ func TestP2PNoTeamNoSocket(t *testing.T) {
 	}
 	waitSockets(t, "the sockets of the host", func(now map[string]bool) bool { return len(newSockets(before, now)) >= 2 })
 
-	left, err := set.Leave("courier")
-	if err != nil {
+	if _, _, err := p.Leave("courier"); err != nil {
 		t.Fatal(err)
 	}
-	p.Left(left)
 	p.sync(ctx)
 	if p.Host() != nil {
 		t.Fatal("the host runs after the last team ended")
@@ -269,11 +267,9 @@ func TestP2PMemberSet(t *testing.T) {
 	if p.IsMember(selfID) {
 		t.Error("self is in the member set")
 	}
-	left, err := set.Leave("gone")
-	if err != nil {
+	if _, _, err := p.Leave("gone"); err != nil {
 		t.Fatal(err)
 	}
-	p.Left(left)
 	// Bravo tells this machine that charlie left team two.
 	two, _ := set.Get("two")
 	cLeft := two.Members[c.String()]
