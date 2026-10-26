@@ -58,6 +58,15 @@ Then start the session with `claude --channels plugin:agent-courier@agent-courie
 
 Without the channel, the tools still work, but no push reaches the session: inbound messages wait in `pending` until the agent calls it.
 
+### Team commands
+
+The plugin adds two slash commands for teams:
+
+- `/agent-courier:invite [team]` makes an invite code and shows its expiry. With no team, it uses the only team of the machine, or asks which one.
+- `/agent-courier:join <code> [--label <label>]` joins the team of an invite code and shows the members.
+
+Only you can start them: the agent cannot call them. Each command checks its arguments before it runs a shell command. Creating, listing and leaving a team stay CLI-only: see [Teams](#teams).
+
 ### Tools
 
 | Tool | What it does |
