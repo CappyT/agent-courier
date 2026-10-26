@@ -44,9 +44,9 @@
 ## 8. Relay deployment (#39)
 
 - [x] 8.1 Add the relay Deployment, Secret, LoadBalancer Service on UDP and TCP 4001 and DNS record `relay.cappyt.sh` to the personal cluster in the kube repo, and verify the pod is ready and the port answers from outside the LAN
-- [ ] 8.2 Put the relay address in the default relay list, and verify a daemon outside the LAN holds a reservation on it
+- [x] 8.2 Put the relay address in the default relay list, and verify a daemon outside the LAN holds a reservation on it
 
 ## 9. Integration and docs (#40)
 
-- [ ] 9.1 Verify a round trip between two people on different networks: a `handoff` sent while the recipient's machine is disconnected arrives when it reconnects, both agents acknowledge, and both pending lists are empty; record the evidence in the issue
+- [ ] 9.1 Verify a round trip between two people on different networks: a message sent while one of the two machines is disconnected arrives when it reconnects, both agents acknowledge, and both pending lists are empty; record the evidence in the issue
 - [ ] 9.2 Write the team part of README.md: commands, what the relay and the DHT see, that a team lives in daemon memory and ends with a restart, and verify the commands run as written
